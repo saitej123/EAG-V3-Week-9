@@ -1,0 +1,42 @@
+[project]
+name = "super-browser-agent"
+version = "0.1.0"
+description = "Super Browser Agent — DAG orchestrator with four-layer browser cascade, replay viewer, and MCP tools"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "networkx",
+    "pyyaml",
+    "faiss-cpu",
+    "crawl4ai",
+    "duckduckgo-search",
+    "fastapi",
+    "google-genai",
+    "httpx",
+    "jinja2",
+    "loguru",
+    "mcp",
+    "pillow",
+    "playwright",
+    "pymupdf",
+    "pydantic",
+    "python-dotenv",
+    "python-multipart",
+    "sse-starlette",
+    "tavily-python",
+    "trafilatura",
+    "uvicorn",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["super_browser*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

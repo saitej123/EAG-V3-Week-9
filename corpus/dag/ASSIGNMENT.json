@@ -1,0 +1,310 @@
+{
+  "description": "DAG demo task outline — parts 1–6 (base through browser comparison + replay viewer).",
+  "session_root": "state/sessions",
+  "log_dir": "logs/dag",
+  "worked_query_ids": ["hello", "A", "I", "J", "K"],
+  "submission_outline": [
+    {
+      "part": 1,
+      "title": "Base queries (session)",
+      "summary": "Pass hello, A, I, J, K verbatim within the wall-clock bound on each card.",
+      "query_ids": ["hello", "A", "I", "J", "K"]
+    },
+    {
+      "part": 2,
+      "title": "Parallel fan-out",
+      "summary": "Custom query with ≥3 independent sub-tasks as concurrent planner nodes; verify wall-clock ≈ max(branch), not sum.",
+      "design_id": "parallel_design",
+      "query_ids": ["P"]
+    },
+    {
+      "part": 3,
+      "title": "Critic verdict",
+      "summary": "Tool-grounded pass and fail (validate_json_keys); fail must splice recovery planner with corrected answer.",
+      "design_id": "critic_design",
+      "query_ids": ["C_pass", "C_fail"]
+    },
+    {
+      "part": 4,
+      "title": "Coder + SandboxExecutor",
+      "summary": "Coder prompt emits Python for SandboxExecutor; computation the formatter cannot do from text alone.",
+      "query_ids": ["M"]
+    },
+    {
+      "part": 5,
+      "title": "New skill (prosody analyst)",
+      "summary": "Add one skill yaml + prompt; one query exercises it. Executor unchanged — reportable if it were.",
+      "design_id": "prosody_design",
+      "query_ids": ["PROS"]
+    },
+    {
+      "part": 6,
+      "title": "Browser comparison agent + replay viewer",
+      "summary": "Browser skill with four-layer cascade; comparison table + replay report (path, actions, cost). At least three visible browser actions on COMP.",
+      "design_id": "browser_design",
+      "query_ids": ["COMP", "B1", "B2", "B3", "B4"]
+    }
+  ],
+  "design_queries": [
+    {
+      "id": "parallel_design",
+      "kind": "parallel",
+      "title": "Parallel fan-out (≥3 independent sub-tasks)",
+      "query_id": "P",
+      "requirements": [
+        "Planner emits at least three researcher nodes with no edges between them (one concurrent wave).",
+        "Executor runs the wave with asyncio.gather — wall-clock for that layer should be ≈ max(branch elapsed), not the sum."
+      ],
+      "verify": "After run: uv run python scripts/dag/analyze_session_timing.py <session_id> — expect parallel_confirmed=true.",
+      "also_see": "Base query I (London / Paris / Berlin) uses the same parallel shape."
+    },
+    {
+      "id": "critic_design",
+      "kind": "critic",
+      "title": "Critic verdict (tool-grounded pass + fail with recovery)",
+      "query_ids": ["C_pass", "C_fail"],
+      "requirements": [
+        "Property verified by critic tool validate_json_keys (keys author, title, year) — available in super_browser/mcp_server.py.",
+        "Run C_pass once: critic passes → formatter only.",
+        "Run C_fail once: critic fails → recovery planner node splices in graph → corrected answer with year added."
+      ],
+      "verify": "Inspect session graph (Graph tab): C_fail session must show a recovery planner node after critic failure.",
+      "tools": ["validate_json_keys", "count_syllables"]
+    },
+    {
+      "id": "prosody_design",
+      "kind": "new_skill",
+      "title": "New skill — yaml + prompt only (no Executor change)",
+      "query_id": "PROS",
+      "requirements": [
+        "Add prosody_analyst to agent_config.yaml with tools: [count_syllables] and prompt: prompts/prosody_analyst.md.",
+        "Planner routes multi-line syllable comparison through prosody_analyst → formatter (one count_syllables call per line).",
+        "Executor and flow.py need no skill-specific branch — generic SkillRegistry dispatch only."
+      ],
+      "verify": "Run PROS: graph shows planner → prosody_analyst → formatter; answer names Line B (17 syllables) over A=11, C=13.",
+      "tools": ["count_syllables"],
+      "also_see": "Tool already exists for critic; prosody_analyst is a new catalogue entry with its own prompt and routing."
+    },
+    {
+      "id": "browser_design",
+      "kind": "browser",
+      "title": "Browser comparison agent + replay viewer",
+      "query_id": "COMP",
+      "requirements": [
+        "Choose a comparison task requiring interactive browser steps (filter, sort, open detail pages).",
+        "At least three visible browser actions — not passive search snippets.",
+        "Deliver structured comparison table plus replay report: goal, DAG, path, actions, extracted data, cost.",
+        "Orchestrator unchanged — browser skill + catalogue only."
+      ],
+      "verify": "Run COMP; Graph tab → click browser node → Replay panel shows path, actions, cost. scripts/browser/analyze_browser_session.py <session_id>",
+      "layer_demos": ["B1", "B2", "B3", "B4"]
+    }
+  ],
+  "browser_findings": {
+    "canvas_heavy_a11y_wins": "Six real canvas-heavy targets predicted to need vision all resolved on a11y via the natural cascade.",
+    "vision_only_on_adversarial_fixture": "Vision path required only for B4 (canvas-only.html), built to defeat a11y.",
+    "architecture": "Cascade escalates; replay trace shows path; cost ledger measures tokens/USD; skill catalogue wires into DAG runtime."
+  },
+  "browser_reference_runs": [
+    {"layer": "1", "target": "news.ycombinator.com", "path": "extract", "turns": 0, "cost_usd": 0.0, "wall_clock_sec": 2.1, "query_id": "B1"},
+    {"layer": "2a", "target": "amazon.com product page", "path": "deterministic", "turns": 0, "cost_usd": 0.0, "wall_clock_sec": 4.3, "query_id": "B2"},
+    {"layer": "2b", "target": "huggingface.co/models", "path": "a11y", "turns": 5, "cost_usd": 0.0, "wall_clock_sec": 5.6, "input_tokens": 9620, "output_tokens": 408, "query_id": "B3"},
+    {"layer": "3", "target": "local canvas-only.html", "path": "vision", "turns": 7, "cost_usd": 0.0, "wall_clock_sec": 29.7, "input_tokens": 4867, "output_tokens": 620, "query_id": "B4"}
+  ],
+  "queries": [
+    {
+      "id": "hello",
+      "part": 1,
+      "label": "hello",
+      "title": "Minimum DAG",
+      "query": "Say hello.",
+      "wall_clock_sec": 15,
+      "expected_nodes_min": 2,
+      "expected_skills": ["planner", "formatter"],
+      "ui_hint": "Smallest graph: planner → formatter only.",
+      "notes": "Planner emits Formatter as sole successor; wall-clock under 3s."
+    },
+    {
+      "id": "A",
+      "part": 1,
+      "label": "A",
+      "title": "Shannon Wikipedia",
+      "query": "Fetch https://en.wikipedia.org/wiki/Claude_Shannon and tell me his birth date, death date, and three key contributions to information theory.",
+      "wall_clock_sec": 180,
+      "expected_nodes_min": 4,
+      "expected_skills": ["planner", "researcher", "distiller", "formatter"],
+      "expected_auto": ["critic"],
+      "expected_flow": "planner → researcher → distiller → critic → formatter",
+      "ui_hint": "One fetch_url to Wikipedia; distiller extracts birth, death, three contributions; critic pass → formatter.",
+      "verify_hint": "Graph: planner → researcher (1× fetch_url) → distiller → critic (pass) → formatter.",
+      "notes": "Researcher fetch_url once; distiller extracts fields; critic auto-spliced; formatter terminal."
+    },
+    {
+      "id": "I",
+      "part": 1,
+      "label": "I",
+      "title": "Populations parallel fan-out (canonical)",
+      "query": "Find the populations of London, Paris, Berlin and tell me which two are closest in size.",
+      "wall_clock_sec": 120,
+      "expected_nodes_min": 7,
+      "expected_skills": ["planner", "researcher", "coder", "formatter", "sandbox_executor"],
+      "parallel_researchers": 3,
+      "ui_hint": "Canonical parallel shape: 3 researchers in one wave, then coder and formatter.",
+      "verify_hint": "Same timing check as query P — analyze_session_timing.py on session id.",
+      "notes": "Three parallel researchers; coder; formatter diamond with auto sandbox_executor."
+    },
+    {
+      "id": "J",
+      "part": 1,
+      "label": "J",
+      "title": "Graceful failure",
+      "query": "Read /nonexistent/path.txt and tell me what's in it.",
+      "wall_clock_sec": 30,
+      "expected_nodes_min": 2,
+      "expected_skills": ["planner", "formatter"],
+      "ui_hint": "Missing file path — planner should route to formatter with a failure note (no hung tools).",
+      "notes": "Planner emits formatter directly with failure note; no tool dispatch."
+    },
+    {
+      "id": "K",
+      "part": 1,
+      "label": "K",
+      "title": "Resumable execution",
+      "query": "For Lagos, Cairo, and Kinshasa, find current populations and growth rates and tell me which is growing fastest.",
+      "wall_clock_sec": 180,
+      "expected_nodes_min": 7,
+      "expected_skills": ["planner", "researcher", "coder", "formatter", "sandbox_executor"],
+      "parallel_researchers": 3,
+      "resume_session_example": "dag_K_resumed_v2",
+      "ui_hint": "Run once, SIGKILL mid parallel researchers, then Resume session in Graph tab (or card button below).",
+      "verify_hint": "Resume: running→pending; pending researcher re-runs tools; coder→formatter finish. state/sessions/<sid>/ is the durable artefact.",
+      "notes": "Kill mid parallel-researcher layer; resume resets running→pending."
+    },
+    {
+      "id": "P",
+      "part": 2,
+      "label": "P",
+      "title": "Custom parallel fan-out (three capitals)",
+      "featured": "parallel_design",
+      "query": "Find the current population of Tokyo, Mumbai, and São Paulo and tell me which city has the largest population.",
+      "wall_clock_sec": 120,
+      "expected_nodes_min": 6,
+      "parallel_researchers": 3,
+      "verify_parallel_max": true,
+      "ui_hint": "Parallel track: three independent population lookups in one concurrent researcher wave.",
+      "verify_hint": "analyze_session_timing.py → parallel_confirmed=true; layer wall ≈ max(branch), not sum."
+    },
+    {
+      "id": "C_pass",
+      "part": 3,
+      "label": "C_pass",
+      "title": "Critic pass — JSON keys verified by tool",
+      "featured": "critic_design",
+      "query": "Validate this JSON object exactly as given (do not omit fields): {\"author\":\"Ada Lovelace\",\"title\":\"Notes\",\"year\":1843}. The distiller must output this JSON verbatim. The critic must verify keys author, title, year exist using validate_json_keys.",
+      "wall_clock_sec": 60,
+      "expected_skills": ["planner", "distiller", "critic", "formatter"],
+      "critic_expect": "pass",
+      "ui_hint": "Run first for critic pass: validate_json_keys sees author, title, year.",
+      "verify_hint": "Graph: distiller → critic (pass) → formatter; no recovery planner."
+    },
+    {
+      "id": "C_fail",
+      "part": 3,
+      "label": "C_fail",
+      "title": "Critic fail — missing key triggers recovery",
+      "featured": "critic_design",
+      "query": "Validate this JSON object exactly as given (do not add fields): {\"author\":\"Ada Lovelace\",\"title\":\"Notes\"}. The distiller must output this JSON verbatim. The critic must verify keys author, title, year exist using validate_json_keys. On fail, replan with year added.",
+      "wall_clock_sec": 90,
+      "expected_skills": ["planner", "distiller", "critic", "formatter"],
+      "critic_expect": "fail_then_recovery",
+      "ui_hint": "Run second for critic fail: missing year → recovery planner splices corrected JSON.",
+      "verify_hint": "Graph: critic fail → recovery planner node → formatter with year:1843."
+    },
+    {
+      "id": "M",
+      "part": 4,
+      "label": "M",
+      "title": "Coder + SandboxExecutor computation",
+      "query": "What is the exact integer value of (17 * 23 - 4) ** 2 + 1000? Use coder to compute; sandbox must verify.",
+      "wall_clock_sec": 60,
+      "expected_nodes_min": 4,
+      "expected_skills": ["planner", "coder", "formatter", "sandbox_executor"],
+      "ui_hint": "Coder emits Python; sandbox_executor verifies stdout. Expected answer: 150769.",
+      "verify_hint": "Graph: planner → coder → sandbox_executor → formatter."
+    },
+    {
+      "id": "PROS",
+      "part": 5,
+      "label": "PROS",
+      "title": "Prosody analyst skill",
+      "featured": "prosody_design",
+      "query": "Using the prosody_analyst skill, count syllables for each line below (one count_syllables call per line). Report the total for each line and which line has the most syllables:\nLine A: The orchestrator runs parallel waves\nLine B: Each researcher fetches population data independently\nLine C: Critic validates JSON keys before formatting",
+      "wall_clock_sec": 60,
+      "expected_nodes_min": 3,
+      "expected_skills": ["planner", "prosody_analyst", "formatter"],
+      "expected_flow": "planner → prosody_analyst → formatter",
+      "ui_hint": "New skill: agent_config.yaml + prompts/prosody_analyst.md only. Three count_syllables calls, then compare totals.",
+      "verify_hint": "Line B wins: A=11, B=17, C=13 syllables (count_syllables heuristic). No Executor changes."
+    },
+    {
+      "id": "COMP",
+      "part": 6,
+      "label": "COMP",
+      "title": "Browser comparison — Hugging Face top 3",
+      "featured": "browser_design",
+      "query": "Compare the top 3 Hugging Face text-generation models: go to https://huggingface.co/models, filter by text-generation, filter by transformers, sort by most likes, open the top three model cards, and return a structured comparison table (model name, likes, one-line description). Use the browser skill with at least three visible actions (filter, sort, open cards). Do not use search snippets only.",
+      "wall_clock_sec": 180,
+      "expected_nodes_min": 4,
+      "expected_skills": ["planner", "browser", "distiller", "formatter"],
+      "expected_flow": "planner → browser → distiller → formatter",
+      "min_browser_actions": 3,
+      "ui_hint": "Interactive comparison + replay viewer on Graph tab (click browser node).",
+      "verify_hint": "Browser path likely a11y on HF; replay shows actions + cost; formatter emits comparison table."
+    },
+    {
+      "id": "B1",
+      "part": 6,
+      "label": "B1",
+      "title": "Layer 1 — Hacker News extract",
+      "query": "Using the browser skill, fetch https://news.ycombinator.com and summarize the top story listings.",
+      "wall_clock_sec": 15,
+      "expected_path": "extract",
+      "expected_skills": ["planner", "browser", "formatter"],
+      "ui_hint": "Layer 1 reference — extract path, 0 LLM turns."
+    },
+    {
+      "id": "B2",
+      "part": 6,
+      "label": "B2",
+      "title": "Layer 2a — Amazon deterministic",
+      "query": "Using browser, search Amazon for a laptop and extract title, price, brand, and description from the top product page.",
+      "wall_clock_sec": 60,
+      "expected_path": "deterministic",
+      "expected_skills": ["planner", "browser", "formatter"],
+      "ui_hint": "Layer 2a reference — CSS selectors, 0 LLM turns."
+    },
+    {
+      "id": "B3",
+      "part": 6,
+      "label": "B3",
+      "title": "Layer 2b — Hugging Face filters",
+      "query": "Go to https://huggingface.co/models, filter by text-generation, filter by transformers, sort by most likes, and read the top three model cards.",
+      "wall_clock_sec": 120,
+      "expected_path": "a11y",
+      "expected_skills": ["planner", "browser", "formatter"],
+      "ui_hint": "Layer 2b canonical — popover dropdown turns; same site as COMP."
+    },
+    {
+      "id": "B4",
+      "part": 6,
+      "label": "B4",
+      "title": "Layer 3 — canvas-only coordinate vision",
+      "query": "Open sandbox/browser/canvas-only.html via browser. Click inside the red circle. Do not guess.",
+      "wall_clock_sec": 120,
+      "expected_path": "vision",
+      "expected_skills": ["planner", "browser", "formatter"],
+      "fixture": "sandbox/browser/canvas-only.html",
+      "ui_hint": "Layer 3 reference — vision after a11y exhausts empty tree."
+    }
+  ]
+}

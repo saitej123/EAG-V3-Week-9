@@ -1,0 +1,94 @@
+# DAG skill catalogue — one Skill class, many yaml entries.
+skills:
+  planner:
+    prompt: prompts/planner.md
+    tools: []
+    temperature: 0.4
+    max_tokens: 4096
+    extends_graph: true
+    provider: gemini
+
+  researcher:
+    prompt: prompts/researcher.md
+    tools: [web_search, fetch_url, fetch_urls, gemini_live_search]
+    temperature: 0.7
+    max_tokens: 4096
+    provider: gemini
+
+  retriever:
+    prompt: prompts/retriever.md
+    tools: [search_knowledge, read_file]
+    temperature: 0.3
+    max_tokens: 4096
+    provider: gemini
+
+  distiller:
+    prompt: prompts/distiller.md
+    tools: []
+    temperature: 0.1
+    max_tokens: 2048
+    critic: true
+    provider: gemini
+
+  summariser:
+    prompt: prompts/summariser.md
+    tools: []
+    temperature: 0.3
+    max_tokens: 2048
+    provider: gemini
+
+  critic:
+    prompt: prompts/critic.md
+    tools: [validate_json_keys, count_syllables]
+    temperature: 0.0
+    max_tokens: 1024
+    provider: gemini
+
+  calculator:
+    prompt: prompts/calculator.md
+    tools: [safe_calculate]
+    temperature: 0.0
+    max_tokens: 1024
+    provider: gemini
+
+  prosody_analyst:
+    prompt: prompts/prosody_analyst.md
+    tools: [count_syllables]
+    temperature: 0.0
+    max_tokens: 2048
+    provider: gemini
+
+  formatter:
+    prompt: prompts/formatter.md
+    tools: []
+    temperature: 0.3
+    max_tokens: 4096
+    terminal: true
+    provider: gemini
+
+  coder:
+    prompt: prompts/coder.md
+    tools: []
+    temperature: 0.2
+    max_tokens: 4096
+    internal_successors: [sandbox_executor]
+    provider: gemini
+
+  sandbox_executor:
+    prompt: prompts/sandbox_executor.md
+    tools: []
+    temperature: 0.0
+    max_tokens: 256
+    provider: gemini
+
+  browser:
+    prompt: prompts/browser.md
+    description: >
+      Four-layer cascade (extract, deterministic, a11y, vision). Takes url and goal
+      in node metadata; returns BrowserOutput. Optional force_path metadata skips escalation.
+      Use when fetch_url fails on JS-rendered
+      pages, interactive widgets, or multi-step workflows.
+    tools: []
+    temperature: 0.5
+    max_tokens: 4096
+    provider: gemini

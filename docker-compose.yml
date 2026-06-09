@@ -1,0 +1,41 @@
+services:
+  super-browser-agent:
+    build: .
+    container_name: super-browser-agent
+    ports:
+      # Host PORT defaults to 8080 (matches ./scripts/serve.sh); container listens on 8000
+      - "${PORT:-8080}:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      GEMINI_MODELS: ${GEMINI_MODELS:-}
+      GEMINI_EMBED_MODEL: ${GEMINI_EMBED_MODEL:-gemini-embedding-2}
+      GEMINI_EMBED_OUTPUT_DIM: ${GEMINI_EMBED_OUTPUT_DIM:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      GATEWAY_URL: ${GATEWAY_URL:-}
+      AGENT_MAX_ITERATIONS: ${AGENT_MAX_ITERATIONS:-3}
+      AGENT_ITERATION_CEILING: ${AGENT_ITERATION_CEILING:-4}
+      AGENT_RUN_MAX_SECONDS: ${AGENT_RUN_MAX_SECONDS:-900}
+      AGENT_LLM_STEP_TIMEOUT_SEC: ${AGENT_LLM_STEP_TIMEOUT_SEC:-60}
+      LLM_RETRY_MAX: ${LLM_RETRY_MAX:-3}
+      LLM_RETRY_SLEEP_SEC: ${LLM_RETRY_SLEEP_SEC:-2.0}
+      LLM_RETRY_BACKOFF: ${LLM_RETRY_BACKOFF:-1.5}
+      VLM_PAGE_BATCH_SIZE: ${VLM_PAGE_BATCH_SIZE:-10}
+      VLM_BATCH_SLEEP_SEC: ${VLM_BATCH_SLEEP_SEC:-1.0}
+      INDEX_FILE_SLEEP_SEC: ${INDEX_FILE_SLEEP_SEC:-0.35}
+      VLM_INDEX_MAX_PAGES: ${VLM_INDEX_MAX_PAGES:-30}
+    volumes:
+      - ./state:/app/state
+      - ./logs:/app/logs
+      - ./sandbox/research_papers:/app/sandbox/research_papers:ro
+      - ./sandbox/papers:/app/sandbox/papers:ro
+      - ./sandbox/rag_corpus:/app/sandbox/rag_corpus:ro
+      - ./sandbox/uploads:/app/sandbox/uploads
+      - crawl4ai-cache:/app/.crawl4ai
+    restart: unless-stopped
+
+volumes:
+  crawl4ai-cache:

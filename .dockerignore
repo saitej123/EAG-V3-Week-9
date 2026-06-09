@@ -1,0 +1,22 @@
+.venv
+venv
+__pycache__
+*.py[cod]
+.git
+.gitignore
+.pytest_cache
+.mypy_cache
+.ruff_cache
+state
+logs
+sandbox_home
+.crawl4ai
+usage.json
+.env
+.env.*
+# Keep markdown in sandbox/corpus; ignore other top-level md
+*.md
+!sandbox/**/*.md
+!corpus/**
+!docs/**
+!README.md

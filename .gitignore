@@ -1,0 +1,36 @@
+# Exclude state directory (durable memory, artifacts, sqlite db)
+state/
+
+# MCP writable sandbox — keep static corpora (.md), ignore PDFs and generated files
+sandbox/*
+!sandbox/papers/
+!sandbox/rag_corpus/
+!sandbox/papers/**
+!sandbox/rag_corpus/**
+# Large PDFs — download locally (scripts/download_research_papers.py) or use sidecars
+sandbox/**/*.pdf
+sandbox/research_papers/
+sandbox/uploads/
+sandbox_home/
+
+# Crawl4AI cache next to mcp_server.py / agent (regenerated)
+.crawl4ai/
+
+# Exclude environment variables
+.env
+.env.*
+logs/
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.python-version
+logs/eval/base_a.log
+logs/eval/base_b.log

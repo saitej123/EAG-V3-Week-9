@@ -1,0 +1,14 @@
+# Pin skill labels to gateway providers — bypasses router pool (DAG mode).
+agents:
+  planner: {provider: gemini}
+  researcher: {provider: gemini}
+  retriever: {provider: gemini}
+  distiller: {provider: gemini}
+  summariser: {provider: gemini}
+  critic: {provider: gemini}
+  calculator: {provider: gemini}
+  prosody_analyst: {provider: gemini}
+  formatter: {provider: gemini}
+  coder: {provider: gemini}
+  sandbox_executor: {provider: gemini}
+  browser: {provider: gemini}

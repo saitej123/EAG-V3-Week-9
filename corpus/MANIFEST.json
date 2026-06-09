@@ -1,0 +1,529 @@
+{
+  "name": "Research Paper RAG Corpus",
+  "description": "Fifty recent arXiv PDFs (cs.LG / cs.CL / cs.AI) with markdown sidecars under sandbox/research_papers/",
+  "item_count": 52,
+  "index_tool": "index_directory('research_papers')",
+  "retrieve_tool": "search_knowledge",
+  "items": [
+    {
+      "id": "2605.20025",
+      "arxiv_id": "2605.20025",
+      "path": "sandbox/research_papers/2605.20025.md",
+      "sandbox_path": "research_papers/2605.20025.md",
+      "pdf_path": "sandbox/research_papers/2605.20025.pdf",
+      "pdf_sandbox_path": "research_papers/2605.20025.pdf",
+      "title": "AutoResearchClaw: Self-Reinforcing Autonomous Research with Human-AI Collaboration",
+      "word_count": 220
+    },
+    {
+      "id": "2605.23904",
+      "arxiv_id": "2605.23904",
+      "path": "sandbox/research_papers/2605.23904.md",
+      "sandbox_path": "research_papers/2605.23904.md",
+      "pdf_path": "sandbox/research_papers/2605.23904.pdf",
+      "pdf_sandbox_path": "research_papers/2605.23904.pdf",
+      "title": "SkillOpt: Executive Strategy for Self-Evolving Agent Skills",
+      "word_count": 266
+    },
+    {
+      "id": "2605.31463",
+      "arxiv_id": "2605.31463",
+      "path": "sandbox/research_papers/2605.31463.md",
+      "sandbox_path": "research_papers/2605.31463.md",
+      "pdf_path": "sandbox/research_papers/2605.31463.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31463.pdf",
+      "title": "PithTrain: A Compact and Agent-Native MoE Training System",
+      "word_count": 187
+    },
+    {
+      "id": "2605.31464",
+      "arxiv_id": "2605.31464",
+      "path": "sandbox/research_papers/2605.31464.md",
+      "sandbox_path": "research_papers/2605.31464.md",
+      "pdf_path": "sandbox/research_papers/2605.31464.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31464.pdf",
+      "title": "GPU Forecasters: Language Models as Selective Surrogates for Kernel Runtime Optimization",
+      "word_count": 274
+    },
+    {
+      "id": "2605.31468",
+      "arxiv_id": "2605.31468",
+      "path": "sandbox/research_papers/2605.31468.md",
+      "sandbox_path": "research_papers/2605.31468.md",
+      "pdf_path": "sandbox/research_papers/2605.31468.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31468.pdf",
+      "title": "AutoSci: A Memory-Centric Agentic System for the Full Scientific Research Lifecycle",
+      "word_count": 248
+    },
+    {
+      "id": "2605.31469",
+      "arxiv_id": "2605.31469",
+      "path": "sandbox/research_papers/2605.31469.md",
+      "sandbox_path": "research_papers/2605.31469.md",
+      "pdf_path": "sandbox/research_papers/2605.31469.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31469.pdf",
+      "title": "Scaling Conversational Hungarian ASR: The BEA-Dialogue+ Corpus",
+      "word_count": 193
+    },
+    {
+      "id": "2605.31478",
+      "arxiv_id": "2605.31478",
+      "path": "sandbox/research_papers/2605.31478.md",
+      "sandbox_path": "research_papers/2605.31478.md",
+      "pdf_path": "sandbox/research_papers/2605.31478.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31478.pdf",
+      "title": "Knowledge Boundary Probing and Demand-Guided Intervention for LLM-Based Power System Code Generation",
+      "word_count": 242
+    },
+    {
+      "id": "2605.31480",
+      "arxiv_id": "2605.31480",
+      "path": "sandbox/research_papers/2605.31480.md",
+      "sandbox_path": "research_papers/2605.31480.md",
+      "pdf_path": "sandbox/research_papers/2605.31480.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31480.pdf",
+      "title": "Language Models Can Resolve Reference Compositionally, But It's Not Their Native Strength: The Case of the Personal Relation Task",
+      "word_count": 217
+    },
+    {
+      "id": "2605.31483",
+      "arxiv_id": "2605.31483",
+      "path": "sandbox/research_papers/2605.31483.md",
+      "sandbox_path": "research_papers/2605.31483.md",
+      "pdf_path": "sandbox/research_papers/2605.31483.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31483.pdf",
+      "title": "BenHalluEval: A Multi-Task Hallucination Evaluation Framework for Large Language Models on Bengali",
+      "word_count": 223
+    },
+    {
+      "id": "2605.31484",
+      "arxiv_id": "2605.31484",
+      "path": "sandbox/research_papers/2605.31484.md",
+      "sandbox_path": "research_papers/2605.31484.md",
+      "pdf_path": "sandbox/research_papers/2605.31484.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31484.pdf",
+      "title": "Balanced LoRA: Removing Parameter Invariance to Accelerate Convergence",
+      "word_count": 150
+    },
+    {
+      "id": "2605.31485",
+      "arxiv_id": "2605.31485",
+      "path": "sandbox/research_papers/2605.31485.md",
+      "sandbox_path": "research_papers/2605.31485.md",
+      "pdf_path": "sandbox/research_papers/2605.31485.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31485.pdf",
+      "title": "Graphical einops: bridging tensor networks and computation graphs",
+      "word_count": 142
+    },
+    {
+      "id": "2605.31490",
+      "arxiv_id": "2605.31490",
+      "path": "sandbox/research_papers/2605.31490.md",
+      "sandbox_path": "research_papers/2605.31490.md",
+      "pdf_path": "sandbox/research_papers/2605.31490.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31490.pdf",
+      "title": "Are Full Rollouts Necessary for On-Policy Distillation?",
+      "word_count": 230
+    },
+    {
+      "id": "2605.31492",
+      "arxiv_id": "2605.31492",
+      "path": "sandbox/research_papers/2605.31492.md",
+      "sandbox_path": "research_papers/2605.31492.md",
+      "pdf_path": "sandbox/research_papers/2605.31492.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31492.pdf",
+      "title": "LinTree: Improving LLM Reasoning with Explicitly Structured Search Histories",
+      "word_count": 251
+    },
+    {
+      "id": "2605.31494",
+      "arxiv_id": "2605.31494",
+      "path": "sandbox/research_papers/2605.31494.md",
+      "sandbox_path": "research_papers/2605.31494.md",
+      "pdf_path": "sandbox/research_papers/2605.31494.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31494.pdf",
+      "title": "Consolidating Rewarded Perturbations for LLM Post-Training",
+      "word_count": 224
+    },
+    {
+      "id": "2605.31497",
+      "arxiv_id": "2605.31497",
+      "path": "sandbox/research_papers/2605.31497.md",
+      "sandbox_path": "research_papers/2605.31497.md",
+      "pdf_path": "sandbox/research_papers/2605.31497.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31497.pdf",
+      "title": "Assign and Add: A Mechanistic Study of Compositional Arithmetic",
+      "word_count": 213
+    },
+    {
+      "id": "2605.31498",
+      "arxiv_id": "2605.31498",
+      "path": "sandbox/research_papers/2605.31498.md",
+      "sandbox_path": "research_papers/2605.31498.md",
+      "pdf_path": "sandbox/research_papers/2605.31498.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31498.pdf",
+      "title": "Scalable Inference-Time Annealing with Surrogate Likelihood Estimators",
+      "word_count": 157
+    },
+    {
+      "id": "2605.31500",
+      "arxiv_id": "2605.31500",
+      "path": "sandbox/research_papers/2605.31500.md",
+      "sandbox_path": "research_papers/2605.31500.md",
+      "pdf_path": "sandbox/research_papers/2605.31500.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31500.pdf",
+      "title": "On Efficient Scaling of GNNs via IO-Aware Layers Implementations",
+      "word_count": 236
+    },
+    {
+      "id": "2605.31503",
+      "arxiv_id": "2605.31503",
+      "path": "sandbox/research_papers/2605.31503.md",
+      "sandbox_path": "research_papers/2605.31503.md",
+      "pdf_path": "sandbox/research_papers/2605.31503.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31503.pdf",
+      "title": "How can embedding models bind concepts?",
+      "word_count": 192
+    },
+    {
+      "id": "2605.31504",
+      "arxiv_id": "2605.31504",
+      "path": "sandbox/research_papers/2605.31504.md",
+      "sandbox_path": "research_papers/2605.31504.md",
+      "pdf_path": "sandbox/research_papers/2605.31504.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31504.pdf",
+      "title": "When Are Multimodal Predictions Biologically Supported? A Diagnostic Evaluation Framework",
+      "word_count": 236
+    },
+    {
+      "id": "2605.31506",
+      "arxiv_id": "2605.31506",
+      "path": "sandbox/research_papers/2605.31506.md",
+      "sandbox_path": "research_papers/2605.31506.md",
+      "pdf_path": "sandbox/research_papers/2605.31506.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31506.pdf",
+      "title": "Evaluating Factual Density in Multi-Source RAG: A Study in Medical AI Accuracy",
+      "word_count": 279
+    },
+    {
+      "id": "2605.31509",
+      "arxiv_id": "2605.31509",
+      "path": "sandbox/research_papers/2605.31509.md",
+      "sandbox_path": "research_papers/2605.31509.md",
+      "pdf_path": "sandbox/research_papers/2605.31509.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31509.pdf",
+      "title": "Skill Reuse as Compression in Agentic RL",
+      "word_count": 136
+    },
+    {
+      "id": "2605.31512",
+      "arxiv_id": "2605.31512",
+      "path": "sandbox/research_papers/2605.31512.md",
+      "sandbox_path": "research_papers/2605.31512.md",
+      "pdf_path": "sandbox/research_papers/2605.31512.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31512.pdf",
+      "title": "Reliable Multilingual Orthopedic Decision Support from Clinical Narratives: Language-Aware Adaptation and Verification-Guided Deferral",
+      "word_count": 228
+    },
+    {
+      "id": "2605.31514",
+      "arxiv_id": "2605.31514",
+      "path": "sandbox/research_papers/2605.31514.md",
+      "sandbox_path": "research_papers/2605.31514.md",
+      "pdf_path": "sandbox/research_papers/2605.31514.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31514.pdf",
+      "title": "If LLMs Have Human-Like Attributes, Then So Does Age of Empires II",
+      "word_count": 267
+    },
+    {
+      "id": "2605.31518",
+      "arxiv_id": "2605.31518",
+      "path": "sandbox/research_papers/2605.31518.md",
+      "sandbox_path": "research_papers/2605.31518.md",
+      "pdf_path": "sandbox/research_papers/2605.31518.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31518.pdf",
+      "title": "On the Relationship Between Activation Outliers and Feature Death in Sparse Autoencoders",
+      "word_count": 207
+    },
+    {
+      "id": "2605.31520",
+      "arxiv_id": "2605.31520",
+      "path": "sandbox/research_papers/2605.31520.md",
+      "sandbox_path": "research_papers/2605.31520.md",
+      "pdf_path": "sandbox/research_papers/2605.31520.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31520.pdf",
+      "title": "Separating Secrets from Placeholders: A Hybrid CNN-CodeBERT Framework for Three-Class Credential Leakage Detection",
+      "word_count": 198
+    },
+    {
+      "id": "2605.31521",
+      "arxiv_id": "2605.31521",
+      "path": "sandbox/research_papers/2605.31521.md",
+      "sandbox_path": "research_papers/2605.31521.md",
+      "pdf_path": "sandbox/research_papers/2605.31521.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31521.pdf",
+      "title": "UniAudio-Token: Empowering Semantic Speech Tokenizers with General Audio Perception",
+      "word_count": 199
+    },
+    {
+      "id": "2605.31522",
+      "arxiv_id": "2605.31522",
+      "path": "sandbox/research_papers/2605.31522.md",
+      "sandbox_path": "research_papers/2605.31522.md",
+      "pdf_path": "sandbox/research_papers/2605.31522.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31522.pdf",
+      "title": "Chem-PerturBridge: a harmonized compendium of small molecule perturbation transcriptomic effects",
+      "word_count": 220
+    },
+    {
+      "id": "2605.31524",
+      "arxiv_id": "2605.31524",
+      "path": "sandbox/research_papers/2605.31524.md",
+      "sandbox_path": "research_papers/2605.31524.md",
+      "pdf_path": "sandbox/research_papers/2605.31524.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31524.pdf",
+      "title": "Value Functions as Supermartingale Certificates",
+      "word_count": 165
+    },
+    {
+      "id": "2605.31532",
+      "arxiv_id": "2605.31532",
+      "path": "sandbox/research_papers/2605.31532.md",
+      "sandbox_path": "research_papers/2605.31532.md",
+      "pdf_path": "sandbox/research_papers/2605.31532.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31532.pdf",
+      "title": "Discovering Thermodynamically Admissible Dissipation Potentials via Grammar-Based Symbolic Regression",
+      "word_count": 197
+    },
+    {
+      "id": "2605.31534",
+      "arxiv_id": "2605.31534",
+      "path": "sandbox/research_papers/2605.31534.md",
+      "sandbox_path": "research_papers/2605.31534.md",
+      "pdf_path": "sandbox/research_papers/2605.31534.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31534.pdf",
+      "title": "Feature-Optimized Vision for Adaptive 3D Scene Reconstruction",
+      "word_count": 182
+    },
+    {
+      "id": "2605.31535",
+      "arxiv_id": "2605.31535",
+      "path": "sandbox/research_papers/2605.31535.md",
+      "sandbox_path": "research_papers/2605.31535.md",
+      "pdf_path": "sandbox/research_papers/2605.31535.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31535.pdf",
+      "title": "RayDer: Scalable Self-Supervised Novel View Synthesis from Real-World Video",
+      "word_count": 179
+    },
+    {
+      "id": "2605.31539",
+      "arxiv_id": "2605.31539",
+      "path": "sandbox/research_papers/2605.31539.md",
+      "sandbox_path": "research_papers/2605.31539.md",
+      "pdf_path": "sandbox/research_papers/2605.31539.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31539.pdf",
+      "title": "Automated Prediction of Postoperative Pancreatic Fistula Using Preoperative Computed Tomography",
+      "word_count": 142
+    },
+    {
+      "id": "2605.31545",
+      "arxiv_id": "2605.31545",
+      "path": "sandbox/research_papers/2605.31545.md",
+      "sandbox_path": "research_papers/2605.31545.md",
+      "pdf_path": "sandbox/research_papers/2605.31545.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31545.pdf",
+      "title": "Preference-Aware Rubric Learning for Personalized Evaluation",
+      "word_count": 236
+    },
+    {
+      "id": "2605.31547",
+      "arxiv_id": "2605.31547",
+      "path": "sandbox/research_papers/2605.31547.md",
+      "sandbox_path": "research_papers/2605.31547.md",
+      "pdf_path": "sandbox/research_papers/2605.31547.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31547.pdf",
+      "title": "The Dynamic-Probabilistic Consistency Gap in Chaotic Surrogate Modeling",
+      "word_count": 214
+    },
+    {
+      "id": "2605.31550",
+      "arxiv_id": "2605.31550",
+      "path": "sandbox/research_papers/2605.31550.md",
+      "sandbox_path": "research_papers/2605.31550.md",
+      "pdf_path": "sandbox/research_papers/2605.31550.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31550.pdf",
+      "title": "Semantic Triplet Restoration: A Novel Protocol for Hierarchical Table Understanding in Large Language Models",
+      "word_count": 201
+    },
+    {
+      "id": "2605.31556",
+      "arxiv_id": "2605.31556",
+      "path": "sandbox/research_papers/2605.31556.md",
+      "sandbox_path": "research_papers/2605.31556.md",
+      "pdf_path": "sandbox/research_papers/2605.31556.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31556.pdf",
+      "title": "Vision-Language Models Suppress Female Representations Under Ambiguous Input",
+      "word_count": 198
+    },
+    {
+      "id": "2605.31558",
+      "arxiv_id": "2605.31558",
+      "path": "sandbox/research_papers/2605.31558.md",
+      "sandbox_path": "research_papers/2605.31558.md",
+      "pdf_path": "sandbox/research_papers/2605.31558.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31558.pdf",
+      "title": "Positional versus Symbolic Attention Heads: Learning Dynamics, RoPE Geometry, and Length Generalization",
+      "word_count": 266
+    },
+    {
+      "id": "2605.31559",
+      "arxiv_id": "2605.31559",
+      "path": "sandbox/research_papers/2605.31559.md",
+      "sandbox_path": "research_papers/2605.31559.md",
+      "pdf_path": "sandbox/research_papers/2605.31559.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31559.pdf",
+      "title": "Functional Attention: From Pairwise Affinities to Functional Correspondences",
+      "word_count": 144
+    },
+    {
+      "id": "2605.31561",
+      "arxiv_id": "2605.31561",
+      "path": "sandbox/research_papers/2605.31561.md",
+      "sandbox_path": "research_papers/2605.31561.md",
+      "pdf_path": "sandbox/research_papers/2605.31561.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31561.pdf",
+      "title": "What Am I Missing? Question-Answering as Hidden State Probing",
+      "word_count": 261
+    },
+    {
+      "id": "2605.31562",
+      "arxiv_id": "2605.31562",
+      "path": "sandbox/research_papers/2605.31562.md",
+      "sandbox_path": "research_papers/2605.31562.md",
+      "pdf_path": "sandbox/research_papers/2605.31562.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31562.pdf",
+      "title": "Effective Biological Representation Learning by Masking Gene Expression",
+      "word_count": 214
+    },
+    {
+      "id": "2605.31563",
+      "arxiv_id": "2605.31563",
+      "path": "sandbox/research_papers/2605.31563.md",
+      "sandbox_path": "research_papers/2605.31563.md",
+      "pdf_path": "sandbox/research_papers/2605.31563.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31563.pdf",
+      "title": "Disagreeing Rationales: Rethinking Classification and Explainability Evaluation in Hate Speech Detection",
+      "word_count": 230
+    },
+    {
+      "id": "2605.31564",
+      "arxiv_id": "2605.31564",
+      "path": "sandbox/research_papers/2605.31564.md",
+      "sandbox_path": "research_papers/2605.31564.md",
+      "pdf_path": "sandbox/research_papers/2605.31564.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31564.pdf",
+      "title": "What Gets Unmasked First? Trajectory Analysis of Diffusion Models for Graph-to-Text Generation",
+      "word_count": 187
+    },
+    {
+      "id": "2605.31575",
+      "arxiv_id": "2605.31575",
+      "path": "sandbox/research_papers/2605.31575.md",
+      "sandbox_path": "research_papers/2605.31575.md",
+      "pdf_path": "sandbox/research_papers/2605.31575.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31575.pdf",
+      "title": "SPECTRA: Synthetic IR Test Collections with Relevance Oracles and Controlled Distractor Diagnostics",
+      "word_count": 211
+    },
+    {
+      "id": "2605.31580",
+      "arxiv_id": "2605.31580",
+      "path": "sandbox/research_papers/2605.31580.md",
+      "sandbox_path": "research_papers/2605.31580.md",
+      "pdf_path": "sandbox/research_papers/2605.31580.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31580.pdf",
+      "title": "Giving Sensors a Voice: Multimodal JEPA for Semantic Time-Series Embeddings",
+      "word_count": 146
+    },
+    {
+      "id": "2605.31581",
+      "arxiv_id": "2605.31581",
+      "path": "sandbox/research_papers/2605.31581.md",
+      "sandbox_path": "research_papers/2605.31581.md",
+      "pdf_path": "sandbox/research_papers/2605.31581.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31581.pdf",
+      "title": "Choosing the Lens: Strategic Perspective Activation in Context-Dependent Argumentation",
+      "word_count": 150
+    },
+    {
+      "id": "2605.31584",
+      "arxiv_id": "2605.31584",
+      "path": "sandbox/research_papers/2605.31584.md",
+      "sandbox_path": "research_papers/2605.31584.md",
+      "pdf_path": "sandbox/research_papers/2605.31584.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31584.pdf",
+      "title": "LongTraceRL: Learning Long-Context Reasoning from Search Agent Trajectories with Rubric Rewards",
+      "word_count": 229
+    },
+    {
+      "id": "2605.31586",
+      "arxiv_id": "2605.31586",
+      "path": "sandbox/research_papers/2605.31586.md",
+      "sandbox_path": "research_papers/2605.31586.md",
+      "pdf_path": "sandbox/research_papers/2605.31586.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31586.pdf",
+      "title": "Language Models Learn Constructional Semantics, Not To Mention Syntax: Investigating LM Understanding of Paired-Focus Constructions",
+      "word_count": 234
+    },
+    {
+      "id": "2605.31590",
+      "arxiv_id": "2605.31590",
+      "path": "sandbox/research_papers/2605.31590.md",
+      "sandbox_path": "research_papers/2605.31590.md",
+      "pdf_path": "sandbox/research_papers/2605.31590.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31590.pdf",
+      "title": "TunerDiT: Training-free Progressive Steering of Diffusion Transformer for Multi-Event Video Generation",
+      "word_count": 194
+    },
+    {
+      "id": "2605.31593",
+      "arxiv_id": "2605.31593",
+      "path": "sandbox/research_papers/2605.31593.md",
+      "sandbox_path": "research_papers/2605.31593.md",
+      "pdf_path": "sandbox/research_papers/2605.31593.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31593.pdf",
+      "title": "Stateful Online Monitoring Catches Distributed Agent Attacks",
+      "word_count": 288
+    },
+    {
+      "id": "2605.31594",
+      "arxiv_id": "2605.31594",
+      "path": "sandbox/research_papers/2605.31594.md",
+      "sandbox_path": "research_papers/2605.31594.md",
+      "pdf_path": "sandbox/research_papers/2605.31594.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31594.pdf",
+      "title": "A Tight Theory of Error Feedback Algorithms in Distributed Optimization",
+      "word_count": 154
+    },
+    {
+      "id": "2605.31596",
+      "arxiv_id": "2605.31596",
+      "path": "sandbox/research_papers/2605.31596.md",
+      "sandbox_path": "research_papers/2605.31596.md",
+      "pdf_path": "sandbox/research_papers/2605.31596.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31596.pdf",
+      "title": "KLIP: localized distribution shift detection via KL-divergence with diffusion priors in Inverse Problems",
+      "word_count": 184
+    },
+    {
+      "id": "2605.31603",
+      "arxiv_id": "2605.31603",
+      "path": "sandbox/research_papers/2605.31603.md",
+      "sandbox_path": "research_papers/2605.31603.md",
+      "pdf_path": "sandbox/research_papers/2605.31603.pdf",
+      "pdf_sandbox_path": "research_papers/2605.31603.pdf",
+      "title": "Lumos-Nexus: Efficient Frequency Bridging with Homogeneous Latent Space for Video Unified Models",
+      "word_count": 216
+    }
+  ]
+}
