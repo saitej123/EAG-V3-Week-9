@@ -42,10 +42,14 @@ from .skills import SkillRegistry, SkillRunContext, format_memory_hits, run_skil
 
 CRITIC_FAIL_CAP = 1
 MAX_NODES = 60
+_BROWSER_GRACEFUL_SKIP = frozenset({"browser_exhausted", "missing_dependency"})
 
 
 def coerce_planner_successors(user_query: str, successors: list[NodeSpec]) -> list[NodeSpec]:
-    """If the user named a URL but the planner only emitted formatter, inject fetch plan."""
+    """Inject fetch/comparison metadata when the planner under-specifies the plan."""
+    from .comparison_format import enrich_planner_nodes
+
+    successors = enrich_planner_nodes(user_query, successors)
     urls = extract_http_urls(user_query)
     if not urls:
         return successors
@@ -272,6 +276,17 @@ class Graph:
 
     extend_from_planner = extend_from
 
+    def _predecessor_satisfied(self, pred_id: str, node_id: str, states: dict[str, NodeState]) -> bool:
+        st = states.get(pred_id)
+        if not st:
+            return False
+        if st.status in (NodeStatus.complete, NodeStatus.skipped):
+            return True
+        meta = self.dg.nodes.get(node_id, {}).get("metadata") or {}
+        if meta.get("recovery") and st.status == NodeStatus.failed and self.dg.has_edge(pred_id, node_id):
+            return True
+        return False
+
     def ready_nodes(self, states: dict[str, NodeState]) -> list[str]:
         ready: list[str] = []
         for nid in nx.topological_sort(self.dg):
@@ -279,10 +294,7 @@ class Graph:
             if st is None or st.status != NodeStatus.pending:
                 continue
             preds = list(self.dg.predecessors(nid))
-            if all(
-                states.get(p) and states[p].status in (NodeStatus.complete, NodeStatus.skipped)
-                for p in preds
-            ):
+            if all(self._predecessor_satisfied(p, nid, states) for p in preds):
                 ready.append(nid)
         return ready
 
@@ -700,6 +712,10 @@ class Executor:
         logger.error(f"[dag] {node_id} ({skill_name}) recovery={decision.action} reason={decision.reason}: {error[:300]}")
 
         if decision.action == "skip":
+            if skill_name == "browser" and decision.reason in _BROWSER_GRACEFUL_SKIP:
+                self._skip_pending_descendants(node_id)
+                self._queue_browser_failure_formatter(node_id, state, decision)
+                return
             self._fatal_error = decision.note or error
             return
         if self.graph.dg.number_of_nodes() >= MAX_NODES:
@@ -728,12 +744,72 @@ class Executor:
             inputs=list(recovery.inputs),
             metadata=dict(recovery.metadata),
         )
+        self._skip_pending_descendants(node_id, except_ids={rid})
         reused_txt = ", ".join(reused) if reused else "(none)"
         _log_node(
             node_id,
             skill_name,
             f"↪ recovery ({decision.reason}): planner node {rid} queued for {node_id}; "
             f"reusing {len(reused)} prior result(s): {reused_txt}",
+        )
+        self._persist()
+
+    def _skip_pending_descendants(self, root_id: str, *, except_ids: set[str] | None = None) -> None:
+        """After replan, abandon the old branch so recovery planner can run without deadlock."""
+        skip = except_ids or set()
+        for nid in nx.descendants(self.graph.dg, root_id):
+            if nid in skip:
+                continue
+            st = self.states.get(nid)
+            if st and st.status == NodeStatus.pending:
+                st.status = NodeStatus.skipped
+                self._flush_node_state(st)
+
+    def _queue_browser_failure_formatter(
+        self,
+        failed_nid: str,
+        state: NodeState,
+        decision: Any,
+    ) -> None:
+        """Queue a formatter instead of aborting the whole run when the browser cascade is exhausted."""
+        for nid, data in self.graph.dg.nodes(data=True):
+            if data.get("skill") != "formatter":
+                continue
+            st = self.states.get(nid)
+            if st and st.status in (NodeStatus.pending, NodeStatus.running):
+                st.status = NodeStatus.skipped
+                self._flush_node_state(st)
+
+        report = dict(decision.failure_report or {})
+        if state.output:
+            report.setdefault("partial_output", state.output)
+        if state.error:
+            report.setdefault("error", state.error)
+
+        spec = NodeSpec(
+            skill="formatter",
+            inputs=["USER_QUERY"],
+            metadata={
+                "label": f"browser_graceful_{failed_nid.replace(':', '_')}",
+                "question": (
+                    "The live browser agent could not fully complete this task. "
+                    "Using the user goal and any partial browser notes, produce the best "
+                    "comparison table you can and clearly state what could not be verified on-site."
+                ),
+                "failure_report": report,
+            },
+        )
+        fid = self.graph.add_node_from_spec(spec)
+        self.states[fid] = NodeState(
+            node_id=fid,
+            skill="formatter",
+            inputs=list(spec.inputs),
+            metadata=dict(spec.metadata),
+        )
+        _log_node(
+            failed_nid,
+            "browser",
+            f"↪ graceful formatter {fid} queued ({decision.reason})",
         )
         self._persist()
 

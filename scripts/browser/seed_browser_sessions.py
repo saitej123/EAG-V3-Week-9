@@ -184,6 +184,8 @@ def seed_comp_session(query: dict) -> str:
     )
     dist_id = by_label.get("extract")
     fmt_id = by_label.get("out")
+    if dist_id:
+        g.splice_critics_on_outgoing_edges([dist_id])
 
     browser_out = _browser_output(qid="COMP", query=query)
     dist_out = json.dumps({"text": COMP_EXTRACTED, "models": 3})
@@ -249,7 +251,8 @@ def seed_comp_session(query: dict) -> str:
     return sid
 
 
-def main() -> int:
+def seed_browser_reference_sessions() -> list[str]:
+    """Create dag_COMP_ref and dag_B1_ref…B4_ref for UI replay demos."""
     spec = load_assignment_spec()
     queries = {q["id"]: q for q in spec.get("queries", [])}
     created: list[str] = []
@@ -264,6 +267,11 @@ def main() -> int:
             continue
         created.append(seed_layer_session(qid=qid, run=run, query=layer_queries[qid]))
 
+    return created
+
+
+def main() -> int:
+    created = seed_browser_reference_sessions()
     print("Seeded browser reference sessions:")
     for sid in created:
         print(f"  state/sessions/{sid}")

@@ -60,6 +60,36 @@ def plan_recovery(
     failed_node_id: str,
 ) -> RecoveryDecision:
     """Policy gate for node failure — transient/validation skip; upstream replans."""
+    lower = (error_text or "").lower()
+    if "no module named" in lower or "modulenotfounderror" in lower:
+        return RecoveryDecision(
+            action="skip",
+            reason="missing_dependency",
+            note=error_text,
+            failure_report={"node_id": failed_node_id, "skill": failed_skill, "error": error_text},
+        )
+    if failed_skill == "browser" and (
+        "executable doesn't exist" in lower
+        or "playwright install" in lower
+        or "playwright chromium is not installed" in lower
+    ):
+        return RecoveryDecision(
+            action="skip",
+            reason="missing_dependency",
+            note=error_text,
+            failure_report={"node_id": failed_node_id, "skill": failed_skill, "error": error_text},
+        )
+    if failed_skill == "browser" and (
+        "cascade exhausted" in lower
+        or "browser cascade failed" in lower
+        or "all browser layers failed" in lower
+    ):
+        return RecoveryDecision(
+            action="skip",
+            reason="browser_exhausted",
+            note=error_text,
+            failure_report={"node_id": failed_node_id, "skill": failed_skill, "error": error_text},
+        )
     kind = classify_failure(error_text)
     if kind == "transient":
         return RecoveryDecision(action="skip", reason=kind, note=error_text)

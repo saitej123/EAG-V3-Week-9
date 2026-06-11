@@ -9,7 +9,10 @@ from urllib.parse import quote_plus, urlparse
 
 from loguru import logger
 
+from .a11y import _initial_url
+from .navigation import navigate_robust
 from .playwright_ctx import browser_page
+
 
 _AMAZON_HOSTS = frozenset({"amazon.com", "www.amazon.com", "amazon.in", "www.amazon.in"})
 
@@ -31,10 +34,8 @@ def _search_query_from_goal(goal: str) -> str | None:
 async def _amazon_product_extract(page, goal: str) -> dict[str, Any]:
     query = _search_query_from_goal(goal) or "laptop"
     search_url = f"https://www.amazon.com/s?k={quote_plus(query)}"
-    await page.goto(search_url, wait_until="domcontentloaded", timeout=45000)
-    await page.wait_for_timeout(1500)
+    await navigate_robust(page, search_url)
 
-    # Top organic (non-sponsored) result
     link = page.locator(
         'div.s-main-slot div[data-component-type="s-search-result"] h2 a.a-link-normal'
     ).first
@@ -72,32 +73,40 @@ async def _amazon_product_extract(page, goal: str) -> dict[str, Any]:
     }
 
 
-async def layer_deterministic(url: str, goal: str) -> dict[str, Any] | None:
+async def layer_deterministic(url: str, goal: str, *, page=None) -> dict[str, Any] | None:
     """Run a hand-written selector workflow when the host is known."""
     host = _host(url)
     if host not in _AMAZON_HOSTS and "amazon." not in host:
         return None
 
     started = time.time()
-    async with browser_page() as (_pw, _browser, page):
+
+    async def _on_page(pg) -> dict[str, Any] | None:
         try:
             if "amazon." in host:
-                data = await _amazon_product_extract(page, goal)
+                data = await _amazon_product_extract(pg, goal)
             else:
                 return None
         except Exception as e:
             logger.info(f"[browser] deterministic failed for {host}: {e}")
             return None
 
-    if not data.get("title"):
-        return None
+        if not data.get("title"):
+            return None
 
-    return {
-        "path": "deterministic",
-        "url": url,
-        "host": host,
-        "content": data,
-        "content_type": "application/json",
-        "elapsed_s": round(time.time() - started, 2),
-        "llm_calls": 0,
-    }
+        return {
+            "path": "deterministic",
+            "url": pg.url,
+            "host": host,
+            "content": data,
+            "content_type": "application/json",
+            "elapsed_s": round(time.time() - started, 2),
+            "llm_calls": 0,
+        }
+
+    if page is not None:
+        return await _on_page(page)
+
+    async with browser_page() as (_pw, _browser, pg):
+        await navigate_robust(pg, _initial_url(url, goal))
+        return await _on_page(pg)

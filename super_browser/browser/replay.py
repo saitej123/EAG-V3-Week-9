@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..catalog import get_dag_query
 from ..persistence import SessionStore
 
 
@@ -85,6 +86,34 @@ def _extracted_data_from_session(states: dict[str, Any], browser_node_id: str | 
     return None
 
 
+def format_browser_path(path: str | None) -> str:
+    """Human-readable cascade path for replay section 3."""
+    key = str(path or "unknown").strip().lower()
+    labels = {
+        "extract": "extract — static httpx/trafilatura or Playwright render",
+        "deterministic": "deterministic — Playwright CSS selectors",
+        "agent": "agent — indexed elements + LLM loop (browser-use pattern)",
+        "a11y": "a11y — accessibility tree + text LLM",
+        "vision": "vision — set-of-marks + VLM",
+        "gateway_blocked": "blocked — captcha / bot wall (recover or report)",
+        "failed": "failed — all layers exhausted",
+    }
+    return labels.get(key, key)
+
+
+def _min_actions_required(report: dict[str, Any]) -> int:
+    qid = str(report.get("query_id") or "").strip()
+    if not qid:
+        return 0
+    row = get_dag_query(qid)
+    if not row:
+        return 0
+    try:
+        return int(row.get("min_browser_actions") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _format_action_line(action: Any) -> str:
     if isinstance(action, str):
         return action
@@ -120,25 +149,31 @@ def format_replay_sections(report: dict[str, Any]) -> list[dict[str, Any]]:
         else ""
     )
 
+    min_required = _min_actions_required(report)
+    path_label = format_browser_path(run.get("path"))
+    actions_body = "\n".join(action_lines) if action_lines else "(no actions logged)"
+    if min_required and len(action_lines) < min_required:
+        actions_body += f"\n\n(requires ≥{min_required} visible browser actions for comparison tasks)"
+
     return [
         {"n": 1, "title": "Original user goal", "body": report.get("user_goal") or "(none)"},
         {"n": 2, "title": "Planner DAG", "body": dag_body.strip() or "(none)"},
         {
             "n": 3,
             "title": "Browser path chosen",
-            "body": str(run.get("path") or "unknown"),
+            "body": path_label,
             "badge": run.get("path"),
         },
         {
             "n": 4,
             "title": "Browser actions taken",
-            "body": "\n".join(action_lines) if action_lines else "(no actions logged)",
+            "body": actions_body,
             "count": len(action_lines),
         },
         {
             "n": 5,
-            "title": "Page-state logs",
-            "body": "\n".join(action_lines) if action_lines else "(screenshots not persisted — see action log)",
+            "title": "Screenshots or page-state logs",
+            "body": actions_body if action_lines else "(screenshots not persisted — action log only)",
         },
         {"n": 6, "title": "Extracted data", "body": str(extracted or run.get("content_preview") or "(none)")},
         {"n": 7, "title": "Final comparison table", "body": comparison or "(formatter output pending)"},
@@ -208,10 +243,14 @@ def build_browser_replay_report(session_id: str, *, node_id: str | None = None) 
 
     comparison = _comparison_table_from_session(states)
     extracted = _extracted_data_from_session(states, primary_browser_id)
+    query_id = None
+    if session_id.startswith("dag_") and session_id.endswith("_ref"):
+        query_id = session_id.removeprefix("dag_").removesuffix("_ref")
 
     report: dict[str, Any] = {
         "available": bool(browser_runs) or bool(query),
         "session_id": session_id,
+        "query_id": query_id,
         "user_goal": query,
         "planner_dag": _planner_dag_summary(store),
         "browser_runs": browser_runs,

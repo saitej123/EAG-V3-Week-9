@@ -1698,7 +1698,7 @@
                         <p class="brand-subtitle">Browser cascade · replay · comparison</p>
                     </div>
                 </div>
-                <p class="mt-3 text-xs leading-relaxed text-zinc-500">Four-layer browser cascade (a11y → vision → DOM → coordinates), comparison tasks, and seeded replay sessions.</p>
+                <p class="mt-3 text-xs leading-relaxed text-zinc-500">Four-layer browser cascade (extract → deterministic → a11y → vision), comparison tasks, and seeded replay sessions.</p>
             </div>
 
             <div id="sidebarTablist" class="flex flex-col divide-y divide-zinc-200 border-b border-zinc-200" role="tablist" aria-label="Sidebar sections">
@@ -1709,7 +1709,7 @@
                 <button type="button" id="sidebarTabTasksBtn" role="tab" aria-selected="false" aria-controls="panelTasks" class="sidebar-tab-btn tab-trigger flex flex-wrap items-center gap-x-2 gap-y-1 border-l-transparent px-3 py-3 text-xs font-semibold leading-snug text-slate-500 transition hover:bg-slate-50/80 hover:text-slate-700 sm:text-[13px]">
                     <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
                     <span>Tasks</span>
-                    <span id="browserTaskCount" class="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-zinc-600 tabular-nums">5</span>
+                    <span id="browserTaskCount" class="rounded-md bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-zinc-600 tabular-nums">9</span>
                 </button>
                 <button type="button" id="sidebarTabGraphBtn" role="tab" aria-selected="false" aria-controls="panelGraph" class="sidebar-tab-btn tab-trigger flex flex-wrap items-center gap-x-2 gap-y-1 border-l-transparent px-3 py-3 text-xs font-semibold leading-snug text-slate-500 transition hover:bg-slate-50/80 hover:text-slate-700 sm:text-[13px]">
                     <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1.5m3.75 3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
@@ -1729,25 +1729,28 @@
                 <div class="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3.5">
                     <h3 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Browser cascade</h3>
                     <div class="pipeline-strip mt-2.5" id="pipelineStrip" aria-hidden="true">
-                        <div class="pipeline-step active"><span>1</span>A11y</div>
-                        <div class="pipeline-step"><span>2</span>Vision</div>
-                        <div class="pipeline-step"><span>3</span>DOM</div>
-                        <div class="pipeline-step"><span>4</span>Coords</div>
+                        <div class="pipeline-step active"><span>1</span>Extract</div>
+                        <div class="pipeline-step"><span>2</span>Deterministic</div>
+                        <div class="pipeline-step"><span>3</span>A11y</div>
+                        <div class="pipeline-step"><span>4</span>Vision</div>
+                        <div class="pipeline-step"><span>5</span>Blocked</div>
                     </div>
                 </div>
+                <p class="mt-2 text-[10px] leading-snug text-zinc-500">web_search/fetch_url fail on JS pages, filters, and multi-step flows — browser picks the cheapest path above.</p>
                 <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
                     <h3 class="text-[11px] font-bold uppercase tracking-wide text-slate-500">How it works</h3>
                     <ul class="role-list mt-2 space-y-2 text-[11px] leading-snug text-slate-600">
-                        <li><span class="role-name">Planner</span><span>Routes browser tasks through the cascade layers.</span></li>
-                        <li><span class="role-name">Browser</span><span>Playwright + vision API — filter, click, extract from live pages.</span></li>
-                        <li><span class="role-name">Distiller</span><span>Structures extracted content for comparison tables.</span></li>
-                        <li><span class="role-name">Replay</span><span>Graph sidebar tab — path, actions, tokens, and cost.</span></li>
+                        <li><span class="role-name">Planner</span><span>Routes comparison tasks through researcher (optional) → browser → distiller.</span></li>
+                        <li><span class="role-name">Browser</span><span>Playwright cascade — filter, click, sort, extract (≥3 actions on comparison tasks).</span></li>
+                        <li><span class="role-name">Distiller + Critic</span><span>Structures extracted data; critic validates before formatter.</span></li>
+                        <li><span class="role-name">Formatter</span><span>Markdown comparison table for submission.</span></li>
+                        <li><span class="role-name">Replay</span><span>8-section report — goal, DAG, path, actions, data, table, cost.</span></li>
                     </ul>
                 </div>
             </div>
 
             <div id="panelTasks" role="tabpanel" aria-labelledby="sidebarTabTasksBtn" class="hidden p-4 flex flex-col gap-2 min-h-0">
-                <p class="text-xs leading-snug text-slate-500 shrink-0">Run <strong>COMP</strong> or layer demos <strong>B1–B4</strong>. Click a card to load the query in Chat.</p>
+                <p class="text-xs leading-snug text-slate-500 shrink-0">Run <strong>COMP</strong>, scavenger hunts <strong>DEAL</strong> / <strong>TICKET</strong>, dossiers <strong>STACK</strong> / <strong>FORGE</strong>, or cascade demos <strong>B1–B4</strong>. Comparison tasks need ≥3 browser actions — not search snippets alone.</p>
                 <div id="dagQueriesScroll" class="dag-queries-scroll scrollbar-thin flex flex-col gap-1 min-h-0 flex-1" tabindex="0" aria-label="Browser task list">
                     <div id="testCaseList" class="flex flex-col shrink-0">
                         <p class="text-xs text-slate-400 py-4 text-center">Loading browser tasks…</p>
@@ -1759,7 +1762,7 @@
             </div>
 
             <div id="panelGraph" role="tabpanel" aria-labelledby="sidebarTabGraphBtn" class="hidden p-4 space-y-3">
-                <p class="text-xs leading-snug text-slate-500">Session graph and replay report open in the main panel. Use <strong>Replay report</strong> after loading a session.</p>
+                <p class="text-xs leading-snug text-slate-500">After a browser run finishes, the graph and <strong>Replay report</strong> (8 sections) open automatically. Or use Tasks → <strong>Open COMP replay demo</strong>.</p>
                 <p id="dagGraphSidebarMeta" class="text-[10px] text-zinc-400">No session loaded</p>
             </div>
         </div>
@@ -1803,7 +1806,7 @@
 
             <div class="chat-composer">
                 <label for="query" class="sr-only">Message</label>
-                <textarea id="query" name="query" rows="2" class="chat-input" placeholder="Try COMP or B1–B4 — pick from Tasks in the sidebar…" autocomplete="off"></textarea>
+                <textarea id="query" name="query" rows="2" class="chat-input" placeholder="Try COMP, DEAL, TICKET, STACK, FORGE, or B1–B4 — pick from Tasks…" autocomplete="off"></textarea>
                 <div id="formHint" class="mt-2 min-h-[1rem] text-xs text-amber-700" role="status" aria-live="polite"></div>
                 <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <div class="composer-actions">
@@ -2282,6 +2285,7 @@
             pendingDagGraphPayload = body;
         }
         if (selectedDagNodeId) showDagNodeDetail(selectedDagNodeId);
+        maybeOpenBrowserReplayAfterRun(body);
     }
 
     async function stopAgentRun(opts) {
@@ -3008,7 +3012,7 @@
             if (sec.n === 3 && sec.badge) {
                 html +=
                     '<p><span class="browser-replay-path">' +
-                    dagEscapeHtml(String(sec.badge)) +
+                    dagEscapeHtml(String(sec.body || sec.badge)) +
                     '</span></p>';
             } else {
                 html += '<pre>' + dagEscapeHtml(String(sec.body || '')) + '</pre>';
@@ -3054,7 +3058,7 @@
                 const demoBtn = dagBrowserReplay.querySelector('[data-load-comp-ref]');
                 if (demoBtn) {
                     demoBtn.addEventListener('click', function () {
-                        loadGraphView('dag_COMP_ref');
+                        void openBrowserReplayForSession('dag_COMP_ref');
                     });
                 }
             })
@@ -3659,13 +3663,21 @@
         if (!strip) return;
         const steps = strip.querySelectorAll('.pipeline-step');
         steps.forEach(function (s) { s.classList.remove('active'); });
-        if (/\[dag\].*\(planner\)/.test(msg)) steps[0]?.classList.add('active');
-        else if (/fetch_url complete|auto tool: fetch_url|\[dag\].*\(researcher\).*tool round 1: fetch_url/.test(msg)) {
+        if (/\[browser\].*path=vision|\[browser\].*vision returned/.test(msg)) {
+            steps[3]?.classList.add('active');
+        } else if (/\[browser\].*path=a11y|\[browser\].*a11y turn/.test(msg)) {
+            steps[2]?.classList.add('active');
+        } else if (/\[browser\].*path=deterministic/.test(msg)) {
             steps[1]?.classList.add('active');
-        } else if (/\[dag\].*\((researcher|retriever|distiller|coder|calculator|prosody_analyst|sandbox_executor|summariser)\)/.test(msg)) steps[1]?.classList.add('active');
-        else if (/\[dag\].*\(critic\)/.test(msg)) steps[2]?.classList.add('active');
-        else if (/\[dag\].*\(formatter\)|RUN_COMPLETE/.test(msg)) steps[3]?.classList.add('active');
-        else if (/\[memory\.|\[memory\.read\]|\[memory\.remember\]/.test(msg)) steps[0]?.classList.add('active');
+        } else if (/\[browser\].*path=extract|\[browser\] cascade start/.test(msg)) {
+            steps[0]?.classList.add('active');
+        } else if (/\[dag\].*\(formatter\)|RUN_COMPLETE|\[browser\].*path=/.test(msg)) {
+            steps[3]?.classList.add('active');
+        } else if (/\[dag\].*\(browser\)/.test(msg)) {
+            steps[0]?.classList.add('active');
+        } else if (/\[dag\].*\(planner\)/.test(msg)) {
+            steps[0]?.classList.add('active');
+        }
     }
 
     function appendLog(rawText) {
@@ -3944,7 +3956,12 @@
         const payload = { query: query };
         if (pendingDagQueryId) {
             payload.query_id = pendingDagQueryId;
+            lastLaunchedQueryId = pendingDagQueryId;
+            pendingBrowserReplayOpen = isBrowserQueryId(lastLaunchedQueryId);
             pendingDagQueryId = null;
+        } else {
+            lastLaunchedQueryId = null;
+            pendingBrowserReplayOpen = false;
         }
         try {
             const res = await fetch('/run-agent', {
@@ -4055,8 +4072,20 @@
                 (dagGraphSessionSelect && dagGraphSessionSelect.value) ||
                 activeDagSessionId ||
                 '';
+            if (!sid) {
+                setDagGraphStatus('Select a session first (or run COMP from Tasks).', true);
+                return;
+            }
+            const browserNode = findBrowserNode(lastDagGraphPayload);
+            const nodeId = (browserNode && browserNode.id) || selectedDagNodeId || null;
             if (dagBrowserReplaySection) dagBrowserReplaySection.dataset.pinned = '1';
-            fetchBrowserReplay(sid, selectedDagNodeId || null);
+            if (browserNode && browserNode.id) {
+                showDagNodeDetail(browserNode.id, browserNode);
+            } else if (nodeId) {
+                showDagNodeDetail(nodeId);
+            } else {
+                fetchBrowserReplay(sid, null);
+            }
             if (dagBrowserReplaySection) {
                 dagBrowserReplaySection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
@@ -4109,6 +4138,27 @@
                 if (res.ok) {
                     appendLog(now + ' | SUCCESS  | [UI] ' + (body.detail || 'Durable state cleared successfully!'));
                     appendChatMessage('assistant', 'Durable state cleared (memory.json + FAISS index).', { system: true });
+                    activeDagSessionId = null;
+                    lastLaunchedQueryId = null;
+                    pendingBrowserReplayOpen = false;
+                    selectedDagNodeId = null;
+                    if (dagGraphSessionSelect) dagGraphSessionSelect.innerHTML = '';
+                    if (dagGraphSidebarMeta) dagGraphSidebarMeta.textContent = 'No session loaded';
+                    if (dagBrowserReplaySection) {
+                        dagBrowserReplaySection.hidden = true;
+                        delete dagBrowserReplaySection.dataset.pinned;
+                    }
+                    if (dagBrowserReplay) dagBrowserReplay.innerHTML = '';
+                    try {
+                        const reseed = await fetch('/api/browser/reseed-sessions', { method: 'POST' });
+                        const reseedBody = await reseed.json().catch(function () { return {}; });
+                        if (reseed.ok && reseedBody.status === 'success') {
+                            appendLog('[UI] Restored browser replay demos (dag_*_ref).');
+                        }
+                    } catch (reseedErr) { /* ignore */ }
+                    void loadDagSessions().then(function () {
+                        return loadBrowserQueries();
+                    });
                 } else {
                     appendLog(now + ' | ERROR    | [UI] Reset failed: ' + (body.detail || ('HTTP ' + res.status)));
                 }
@@ -4137,6 +4187,30 @@
         return String((q && (q.ui_hint || q.notes)) || '').trim();
     }
 
+    function dagSectionHeading(section) {
+        const title = section.title || dagPartLabel(section.part);
+        return title;
+    }
+
+    function dagQueryMetaLabel(q) {
+        const bound = q.wall_clock_sec ? q.wall_clock_sec + 's bound' : '';
+        if (q.id === 'COMP') {
+            return bound ? 'Comparison · ' + bound : 'Comparison';
+        }
+        if (q.featured === 'browser_creative') {
+            return bound ? 'Creative · ' + bound : 'Creative';
+        }
+        if (q.expected_path) {
+            const layer = String(q.expected_path);
+            return bound ? 'Layer · ' + layer + ' · ' + bound : 'Layer · ' + layer;
+        }
+        const part = Number(q.part);
+        if (part) {
+            return bound ? 'Part ' + part + ' · ' + bound : 'Part ' + part;
+        }
+        return bound;
+    }
+
     function dagSkillsTag(q) {
         const flow = q && (q.expected_flow || '');
         if (flow) {
@@ -4156,7 +4230,55 @@
     }
 
     let pendingDagQueryId = null;
+    let lastLaunchedQueryId = null;
+    let pendingBrowserReplayOpen = false;
+    const BROWSER_QUERY_IDS = {
+        COMP: true,
+        DEAL: true,
+        TICKET: true,
+        STACK: true,
+        FORGE: true,
+        B1: true,
+        B2: true,
+        B3: true,
+        B4: true,
+    };
     let dagSessionsById = {};
+
+    function isBrowserQueryId(qid) {
+        return !!(qid && BROWSER_QUERY_IDS[String(qid)]);
+    }
+
+    function findBrowserNode(payload) {
+        const nodes = (payload && payload.nodes) || [];
+        for (let i = 0; i < nodes.length; i += 1) {
+            if (nodes[i].skill === 'browser') return nodes[i];
+        }
+        return null;
+    }
+
+    function openBrowserReplayForSession(sessionId, opts) {
+        opts = opts || {};
+        if (!sessionId) return Promise.resolve();
+        openGraphView();
+        if (dagBrowserReplaySection) dagBrowserReplaySection.dataset.pinned = '1';
+        return loadGraphView(sessionId).then(function () {
+            const browserNode = findBrowserNode(lastDagGraphPayload);
+            const nodeId = opts.nodeId || (browserNode && browserNode.id);
+            if (nodeId) showDagNodeDetail(nodeId, browserNode);
+            else fetchBrowserReplay(sessionId, null);
+            if (dagBrowserReplaySection) {
+                dagBrowserReplaySection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        });
+    }
+
+    function maybeOpenBrowserReplayAfterRun(body) {
+        if (!pendingBrowserReplayOpen || !body || !body.run_complete || !activeDagSessionId) return;
+        if (!isBrowserQueryId(lastLaunchedQueryId)) return;
+        pendingBrowserReplayOpen = false;
+        void openBrowserReplayForSession(activeDagSessionId);
+    }
 
     function loadDagQueryIntoComposer(query, autoRun, queryId) {
         if (!query) return;
@@ -4247,11 +4369,7 @@
                 demo.className = 'dag-design-run';
                 demo.textContent = 'Open COMP replay demo';
                 demo.addEventListener('click', function () {
-                    openGraphView();
-                    loadGraphView('dag_COMP_ref').then(function () {
-                        if (dagBrowserReplaySection) dagBrowserReplaySection.dataset.pinned = '1';
-                        fetchBrowserReplay('dag_COMP_ref', null);
-                    });
+                    void openBrowserReplayForSession('dag_COMP_ref');
                 });
                 actions.appendChild(demo);
             }
@@ -4274,15 +4392,28 @@
                     replayLayer.className = 'dag-design-run';
                     replayLayer.textContent = lid + ' replay';
                     replayLayer.addEventListener('click', function () {
-                        openGraphView();
-                        loadGraphView('dag_' + lid + '_ref').then(function () {
-                            if (dagBrowserReplaySection) dagBrowserReplaySection.dataset.pinned = '1';
-                            fetchBrowserReplay('dag_' + lid + '_ref', null);
-                        });
+                        void openBrowserReplayForSession('dag_' + lid + '_ref');
                     });
                     layerRow.appendChild(replayLayer);
                 });
                 actions.appendChild(layerRow);
+            }
+            if (dq.creative_comparisons && dq.creative_comparisons.length && actions) {
+                const creativeRow = document.createElement('div');
+                creativeRow.className = 'dag-design-layer-demos';
+                dq.creative_comparisons.forEach(function (cid) {
+                    const creativeQ = queriesById[cid];
+                    if (!creativeQ) return;
+                    const runCreative = document.createElement('button');
+                    runCreative.type = 'button';
+                    runCreative.className = 'dag-design-run';
+                    runCreative.textContent = 'Run ' + cid;
+                    runCreative.addEventListener('click', function () {
+                        loadDagQueryIntoComposer(creativeQ.query, true, cid);
+                    });
+                    creativeRow.appendChild(runCreative);
+                });
+                actions.appendChild(creativeRow);
             }
         }
         if (dq.kind === 'new_skill' && dq.query_id) {
@@ -4352,8 +4483,7 @@
         sections.forEach(function (section) {
             const header = document.createElement('p');
             header.className = 'dag-outline-header';
-            header.textContent =
-                section.part + ' · ' + (section.title || dagPartLabel(section.part));
+            header.textContent = dagSectionHeading(section);
             list.appendChild(header);
             if (section.summary) {
                 const sum = document.createElement('p');
@@ -4368,7 +4498,12 @@
             }
             (section.query_ids || []).forEach(function (qid) {
                 const q = queriesById[qid];
-                if (q) list.appendChild(renderDagQueryButton(q));
+                if (!q) return;
+                if (section.design_id && designById[section.design_id]) {
+                    const dq = designById[section.design_id];
+                    if (qid === dq.query_id) return;
+                }
+                list.appendChild(renderDagQueryButton(q));
             });
         });
     }
@@ -4383,6 +4518,14 @@
         if (q.parallel_researchers || (q.expected_skills && q.expected_skills.indexOf('researcher') >= 0)) {
             cardClass += ' query-card-resume';
         }
+        if (
+            q.featured === 'browser_design' ||
+            q.featured === 'browser_creative' ||
+            String(q.id || '').match(/^B[1-4]$/) ||
+            q.id === 'COMP'
+        ) {
+            cardClass += ' query-card-browser';
+        }
         wrap.className = cardClass;
 
         const btn = document.createElement('button');
@@ -4391,7 +4534,7 @@
             'test-case-btn border-0 bg-transparent hover:bg-slate-50/80 rounded-xl p-3 text-left focus:ring-2 focus:ring-zinc-900/10 outline-none w-full';
         btn.setAttribute('data-query', q.query);
         if (q.id) btn.setAttribute('data-query-id', String(q.id));
-        const bound = q.wall_clock_sec ? q.wall_clock_sec + 's bound' : '';
+        const metaLabel = dagQueryMetaLabel(q);
         let badgeClass = 'case-badge';
         if (q.featured === 'parallel_design' || q.verify_parallel_max) {
             badgeClass += ' parallel';
@@ -4401,18 +4544,12 @@
             badgeClass += ' prosody';
         } else if (
             q.featured === 'browser_design' ||
+            q.featured === 'browser_creative' ||
             q.id === 'COMP' ||
             String(q.id || '').match(/^B[1-4]$/) ||
             (q.expected_skills && q.expected_skills.indexOf('browser') >= 0)
         ) {
             badgeClass += ' browser';
-        }
-        if (
-            q.featured === 'browser_design' ||
-            String(q.id || '').match(/^B[1-4]$/) ||
-            q.id === 'COMP'
-        ) {
-            cardClass += ' query-card-browser';
         }
         const hintText = dagQueryHint(q);
         const uiHint = hintText
@@ -4450,9 +4587,7 @@
             escapeHtml(q.title || q.id || '') +
             '</span>' +
             '<span class="case-subtitle">' +
-            'Part ' +
-            escapeHtml(String(q.part || '')) +
-            (bound ? ' · ' + escapeHtml(bound) : '') +
+            escapeHtml(metaLabel) +
             '</span>' +
             uiHint +
             verifyHint +
@@ -4466,10 +4601,10 @@
     }
 
     const WELCOME_DEMO_IDS = [
-        { id: 'COMP', chipClass: 'browser-welcome-chip', label: 'COMP · compare' },
-        { id: 'B1', chipClass: 'browser-welcome-chip', label: 'B1 · extract' },
-        { id: 'B3', chipClass: 'browser-welcome-chip', label: 'B3 · a11y' },
-        { id: 'B4', chipClass: 'browser-welcome-chip', label: 'B4 · canvas' },
+        { id: 'COMP', chipClass: 'browser-welcome-chip', label: 'COMP · HF leaderboard' },
+        { id: 'DEAL', chipClass: 'browser-welcome-chip', label: 'DEAL · laptop hunt' },
+        { id: 'TICKET', chipClass: 'browser-welcome-chip', label: 'TICKET · IMAX' },
+        { id: 'STACK', chipClass: 'browser-welcome-chip', label: 'STACK · AI pricing' },
     ];
 
     function renderWelcomeDemoChips(queriesById) {

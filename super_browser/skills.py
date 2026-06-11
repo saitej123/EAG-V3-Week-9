@@ -435,18 +435,61 @@ async def run_skill(
         artifacts_get_bytes=ctx.artifacts.get_bytes,
     )
     rendered = render_prompt(skill, query, resolved, failure_report, memory_hits=ctx.memory_hits)
+    from .comparison_format import distiller_prompt_block, format_comparison_answer, parse_comparison_spec
+
+    cmp_spec = parse_comparison_spec(query)
+    if cmp_spec.is_comparison and skill.name == "distiller":
+        rendered = f"{rendered}\n\n{distiller_prompt_block(query)}"
     started = time.time()
 
+    if skill.name == "formatter":
+        table = format_comparison_answer(query, resolved)
+        if table:
+            return (
+                AgentResult(
+                    success=True,
+                    agent_name=skill.name,
+                    status="complete",
+                    output={"text": table},
+                    elapsed_s=time.time() - started,
+                ),
+                rendered,
+            )
+
     if skill.name == "browser":
-        from .browser import run_browser_cascade
-        from .search_providers import extract_http_urls
+        try:
+            from .browser import run_browser_cascade
+            from .search_providers import extract_http_urls
+        except ImportError as e:
+            hint = "Run from project root: ./scripts/serve.sh"
+            return (
+                AgentResult(
+                    success=False,
+                    agent_name=skill.name,
+                    status="failed",
+                    error=f"Browser dependencies missing ({e}). {hint}",
+                    error_code="extraction_failed",
+                    elapsed_s=time.time() - started,
+                ),
+                rendered,
+            )
 
         meta = graph_nodes[node_id].get("metadata") or {}
         sub_q = str(meta.get("question") or meta.get("goal") or query)
+        from .comparison_format import comparison_browser_goal_suffix, parse_comparison_spec
+
+        cmp_spec = parse_comparison_spec(query)
+        if cmp_spec.is_comparison:
+            suffix = comparison_browser_goal_suffix(query)
+            if suffix and suffix not in sub_q:
+                sub_q = f"{sub_q.rstrip('.')}. {suffix}"
         meta_url = str(meta.get("url") or "").strip()
         combined = f"{sub_q}\n{query}\n{meta_url}"
         urls = [meta_url] if meta_url.startswith("http") else extract_http_urls(combined)
-        if not urls:
+        from .browser.urls import resolve_browser_urls
+
+        targets = resolve_browser_urls(urls[0] if urls else "", sub_q, query)
+        if not targets:
             return (
                 AgentResult(
                     success=False,
@@ -458,15 +501,60 @@ async def run_skill(
                 ),
                 rendered,
             )
+        if len(targets) > 1:
+            logger.info(f"[browser] multi-site crawl: {len(targets)} URLs")
         force_path = str(meta.get("force_path") or "").strip().lower() or None
-        browser_out, error_code = await run_browser_cascade(
-            urls[0],
-            sub_q or query,
-            llm=ctx.llm,
-            force_path=force_path,
-        )
+        min_actions = 0
+        try:
+            min_actions = int(meta.get("min_browser_actions") or 0)
+        except (TypeError, ValueError):
+            min_actions = 0
+        if not min_actions:
+            from .catalog import get_dag_query, min_browser_actions_for_text
+
+            qrow = get_dag_query(str(meta.get("query_id") or meta.get("label") or ""))
+            if qrow:
+                try:
+                    min_actions = int(qrow.get("min_browser_actions") or 0)
+                except (TypeError, ValueError):
+                    min_actions = 0
+            if not min_actions:
+                min_actions = min_browser_actions_for_text(f"{sub_q}\n{query}")
+        try:
+            browser_out, error_code = await run_browser_cascade(
+                targets[0],
+                sub_q or query,
+                llm=ctx.llm,
+                force_path=force_path,
+                min_browser_actions=min_actions,
+                all_urls=targets,
+            )
+        except Exception as e:
+            logger.error(f"[browser] skill dispatch error (contained): {e}")
+            return (
+                AgentResult(
+                    success=False,
+                    agent_name=skill.name,
+                    status="failed",
+                    output={
+                        "path": "failed",
+                        "url": urls[0],
+                        "content": None,
+                        "error": str(e)[:500],
+                    },
+                    elapsed_s=time.time() - started,
+                    error=str(e)[:500],
+                    error_code="extraction_failed",
+                ),
+                rendered,
+            )
         parsed = browser_out.model_dump()
-        ok = browser_out.path not in {"failed", "gateway_blocked"} and bool(browser_out.content)
+        blocked = browser_out.path == "gateway_blocked"
+        has_content = bool(browser_out.content)
+        ok = has_content and not blocked
+        fail_msg = str(parsed.get("error") or "browser cascade failed")
+        if ok and browser_out.path == "failed":
+            fail_msg = f"partial browser result ({fail_msg})"
         return (
             AgentResult(
                 success=ok,
@@ -474,7 +562,7 @@ async def run_skill(
                 status="complete" if ok else "failed",
                 output=parsed,
                 elapsed_s=time.time() - started,
-                error=None if ok else str(parsed.get("error") or "browser cascade failed"),
+                error=None if ok else fail_msg,
                 error_code=None if ok else error_code,
             ),
             rendered,

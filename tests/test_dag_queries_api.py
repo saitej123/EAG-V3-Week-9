@@ -1,37 +1,21 @@
-"""DAG demo query corpus and /api/queries/dag contract tests."""
+"""Browser assignment query corpus and /api/queries/* contract tests."""
 
 from __future__ import annotations
-
-import re
 
 import pytest
 from fastapi.testclient import TestClient
 
 from super_browser.catalog import (
     assignment_payload,
+    browser_queries_payload,
     expected_flow_for_query,
     get_dag_query,
     load_assignment_queries,
     validate_assignment_corpus,
 )
 
-EXPECTED_IDS = [
-    "hello",
-    "A",
-    "I",
-    "J",
-    "K",
-    "P",
-    "C_pass",
-    "C_fail",
-    "M",
-    "PROS",
-    "COMP",
-    "B1",
-    "B2",
-    "B3",
-    "B4",
-]
+EXPECTED_IDS = ["COMP", "DEAL", "TICKET", "STACK", "FORGE", "B1", "B2", "B3", "B4"]
+CREATIVE_IDS = ["DEAL", "TICKET", "STACK", "FORGE"]
 
 
 def test_validate_assignment_corpus_clean():
@@ -43,21 +27,16 @@ def test_every_demo_query_has_query_text_and_bounds():
         assert str(row["query"]).strip()
         assert float(row["wall_clock_sec"]) > 0
         assert row.get("title")
-        assert int(row["part"]) in {1, 2, 3, 4, 5, 6}
+        assert int(row["part"]) == 1
 
 
 def test_design_queries_reference_real_ids():
     payload = assignment_payload()
     ids = {q["id"] for q in payload["queries"]}
     for dq in payload["design_queries"]:
-        if dq["kind"] == "parallel":
-            assert dq["query_id"] in ids
-        if dq["kind"] == "critic":
-            assert set(dq["query_ids"]).issubset(ids)
-        if dq["kind"] == "new_skill":
-            assert dq["query_id"] in ids
-        if dq["kind"] == "browser":
-            assert dq["query_id"] in ids
+        assert dq["kind"] == "browser"
+        assert dq["query_id"] in ids
+        assert set(dq.get("creative_comparisons") or []).issubset(ids)
 
 
 def test_groups_cover_all_queries():
@@ -69,20 +48,13 @@ def test_groups_cover_all_queries():
 def test_submission_outline_order_matches_checklist():
     payload = assignment_payload()
     outline = payload["outline"]
-    assert len(outline) == 6
-    assert outline[0]["part"] == 1
-    assert outline[0]["query_ids"] == ["hello", "A", "I", "J", "K"]
-    assert outline[1]["part"] == 2
-    assert outline[1]["query_ids"] == ["P"]
-    assert outline[1]["design_id"] == "parallel_design"
-    assert outline[2]["query_ids"] == ["C_pass", "C_fail"]
-    assert outline[2]["design_id"] == "critic_design"
-    assert outline[3]["query_ids"] == ["M"]
-    assert outline[4]["query_ids"] == ["PROS"]
-    assert outline[4]["design_id"] == "prosody_design"
-    assert outline[5]["part"] == 6
-    assert outline[5]["query_ids"] == ["COMP", "B1", "B2", "B3", "B4"]
-    assert outline[5]["design_id"] == "browser_design"
+    assert len(outline) == 4
+    assert outline[0]["title"] == "Anchor mission"
+    assert outline[0]["query_ids"] == ["COMP"]
+    assert outline[0]["design_id"] == "browser_design"
+    assert outline[1]["query_ids"] == ["DEAL", "TICKET"]
+    assert outline[2]["query_ids"] == ["STACK", "FORGE"]
+    assert outline[3]["query_ids"] == ["B1", "B2", "B3", "B4"]
 
 
 @pytest.mark.parametrize("qid", EXPECTED_IDS)
@@ -100,12 +72,13 @@ def test_api_dag_queries_success():
     assert res.status_code == 200
     body = res.json()
     assert body["status"] == "success"
-    assert body["query_count"] == 15
-    assert len(body["queries"]) == 15
-    assert len(body["design_queries"]) == 4
-    assert len(body["groups"]) == 6
-    assert len(body["outline"]) == 6
-    assert body["outline"][0]["query_ids"][0] == "hello"
+    assert body["query_count"] == 9
+    assert len(body["queries"]) == 9
+    assert len(body["design_queries"]) == 1
+    assert len(body["groups"]) == 4
+    assert len(body["outline"]) == 4
+    assert body.get("browser_only") is True
+    assert body["outline"][0]["query_ids"][0] == "COMP"
 
     ids = [q["id"] for q in body["queries"]]
     assert sorted(ids) == sorted(EXPECTED_IDS)
@@ -117,15 +90,24 @@ def test_api_dag_queries_success():
             assert q.get("expected_flow")
 
 
-def test_query_a_expected_flow_and_wikipedia_url():
-    row = get_dag_query("A")
+def test_comp_expected_flow_and_min_actions():
+    row = get_dag_query("COMP")
     assert row is not None
-    assert "wikipedia.org/wiki/Claude_Shannon" in row["query"]
-    assert expected_flow_for_query(row) == "planner → researcher → distiller → critic → formatter"
+    assert "huggingface.co/models" in row["query"]
+    assert row.get("min_browser_actions", 0) >= 3
+    assert expected_flow_for_query(row) == "planner → browser → distiller → critic → formatter"
     payload = assignment_payload()
-    api_a = next(q for q in payload["queries"] if q["id"] == "A")
-    assert api_a["expected_flow"] == expected_flow_for_query(row)
-    assert "fetch_url" in api_a.get("verify_hint", "").lower() or "fetch" in api_a.get("ui_hint", "").lower()
+    api_comp = next(q for q in payload["queries"] if q["id"] == "COMP")
+    assert api_comp["expected_flow"] == expected_flow_for_query(row)
+
+
+def test_creative_queries_require_browser_actions():
+    for qid in CREATIVE_IDS:
+        row = get_dag_query(qid)
+        assert row is not None
+        assert row.get("min_browser_actions", 0) >= 3
+        assert "browser" in row.get("expected_skills", [])
+        assert row.get("featured") == "browser_creative"
 
 
 def test_api_dag_queries_render_fields_for_ui():
@@ -135,17 +117,18 @@ def test_api_dag_queries_render_fields_for_ui():
     body = client.get("/api/queries/dag").json()
     by_id = {q["id"]: q for q in body["queries"]}
 
-    assert by_id["P"]["parallel_researchers"] == 3
-    assert by_id["C_pass"]["critic_expect"] == "pass"
-    assert by_id["C_fail"]["critic_expect"] == "fail_then_recovery"
-    assert "validate_json_keys" in by_id["C_pass"]["query"]
-    assert by_id["M"]["ui_hint"]
-    assert by_id["PROS"]["ui_hint"]
-    assert by_id["PROS"]["expected_flow"] == "planner → prosody_analyst → formatter"
-    assert "prosody_analyst" in by_id["PROS"]["expected_skills"]
-    assert by_id["COMP"]["expected_flow"] == "planner → browser → distiller → formatter"
+    assert by_id["COMP"]["expected_flow"] == "planner → browser → distiller → critic → formatter"
+    assert by_id["DEAL"]["featured"] == "browser_creative"
+    assert by_id["TICKET"]["title"] == "IMAX showdown — BookMyShow"
     assert by_id["B1"]["expected_path"] == "extract"
-    assert re.search(r"150769", by_id["M"]["ui_hint"])
+    assert by_id["B4"]["expected_path"] == "vision"
+
+
+def test_browser_queries_payload_matches_assignment():
+    dag = assignment_payload()
+    browser = browser_queries_payload()
+    assert dag["query_count"] == browser["query_count"]
+    assert {q["id"] for q in dag["queries"]} == {q["id"] for q in browser["queries"]}
 
 
 def test_api_browser_queries_success():
@@ -156,11 +139,29 @@ def test_api_browser_queries_success():
     assert res.status_code == 200
     body = res.json()
     assert body["status"] == "success"
-    assert body["query_count"] == 5
+    assert body["query_count"] == 9
     ids = {q["id"] for q in body["queries"]}
-    assert ids == {"COMP", "B1", "B2", "B3", "B4"}
+    assert ids == set(EXPECTED_IDS)
     assert len(body["design_queries"]) == 1
     assert body["design_queries"][0]["kind"] == "browser"
+    assert body.get("browser_only") is True
+    assert len(body["outline"]) == 4
+    assert body["outline"][0]["title"] == "Anchor mission"
+    assert body["outline"][1]["query_ids"] == ["DEAL", "TICKET"]
+    assert body["outline"][2]["query_ids"] == ["STACK", "FORGE"]
+    assert body["outline"][3]["query_ids"] == ["B1", "B2", "B3", "B4"]
+
+
+def test_api_browser_reseed_sessions():
+    from app import app
+
+    client = TestClient(app)
+    res = client.post("/api/browser/reseed-sessions")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "success"
+    assert "dag_COMP_ref" in body["session_ids"]
+    assert len(body["session_ids"]) == 5
 
 
 def test_api_browser_queries_html_page_includes_loader():

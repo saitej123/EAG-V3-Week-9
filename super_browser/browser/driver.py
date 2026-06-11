@@ -100,6 +100,70 @@ Rules:
 """
 
 
+def agent_turn_prompt(*, goal: str, state: str, url: str, turn: int, element_count: int) -> str:
+    """browser-use-style indexed element prompt (click by [index])."""
+    return f"""You are a browser automation agent (browser-use pattern). Plan the next step.
+
+GOAL: {goal}
+URL: {url}
+TURN: {turn}
+INTERACTIVE ELEMENTS: {element_count}
+
+{state[:12000]}
+
+Respond with JSON only. Prefer clicking by index — most reliable.
+
+Done when goal is visible on page:
+{{"action": "done", "answer": "<markdown table or extracted facts from LIVE page only>"}}
+
+Click indexed element (preferred):
+{{"action": "click_index", "index": 5}}
+
+Navigate:
+{{"action": "go_to_url", "url": "https://example.com/pricing"}}
+
+Scroll to reveal more content:
+{{"action": "scroll", "direction": "down"}}
+
+Wait for dynamic content:
+{{"action": "wait", "seconds": 2}}
+
+Label-based fallback (same turn max 2 actions):
+{{"actions": [
+  {{"action": "click_index", "index": 3}},
+  {{"action": "scroll", "direction": "down"}}
+]}}
+
+Rules:
+- Use ONLY indices from the list above — do not invent element numbers.
+- After opening a menu/tab, STOP; next turn gets a fresh element list.
+- For pricing/comparison goals: expand billing tabs, scroll to plans, then done with live prices.
+- Never answer from memory — only text visible on the current page.
+- Max 2 actions per turn.
+"""
+
+
+async def _click_index(page, action: dict[str, Any]) -> str:
+    selector_map = action.get("_selector_map") or {}
+    try:
+        idx = int(action.get("index") or action.get("element_index") or 0)
+    except (TypeError, ValueError):
+        return "click_index_invalid"
+    item = selector_map.get(idx)
+    if not item:
+        return f"click_index_missing:{idx}"
+    box = item.get("box") or {}
+    try:
+        x = float(box.get("x", 0)) + float(box.get("width", 0)) / 2
+        y = float(box.get("y", 0)) + float(box.get("height", 0)) / 2
+    except (TypeError, ValueError):
+        return f"click_index_bad_box:{idx}"
+    await page.mouse.click(x, y)
+    await page.wait_for_timeout(900)
+    label = str(item.get("label") or "")[:40]
+    return f"click_index:{idx}:{label}"
+
+
 async def execute_action(page, action: dict[str, Any]) -> str:
     """Run one fenced action on the live page."""
     kind = (action.get("action") or "").lower()
@@ -109,22 +173,57 @@ async def execute_action(page, action: dict[str, Any]) -> str:
     if kind in {"done", "extract"}:
         return (action.get("answer") or text or "done").strip()
 
+    if kind in {"click_index", "click"} and action.get("index") is not None:
+        return await _click_index(page, action)
+
+    if kind == "scroll":
+        direction = str(action.get("direction") or "down").lower()
+        delta = 700 if direction != "up" else -700
+        try:
+            await page.mouse.wheel(0, delta)
+            await page.wait_for_timeout(600)
+            return f"scroll:{direction}"
+        except Exception as e:
+            return f"scroll_failed:{e}"
+
+    if kind == "wait":
+        try:
+            secs = min(float(action.get("seconds") or 1), 5.0)
+        except (TypeError, ValueError):
+            secs = 1.0
+        await page.wait_for_timeout(int(secs * 1000))
+        return f"wait:{secs}s"
+
+    if kind in {"go_to_url", "navigate", "open_url"}:
+        target_url = str(action.get("url") or text or "").strip()
+        if not target_url.startswith("http"):
+            return "go_to_url_invalid"
+        try:
+            from .navigation import navigate_robust
+
+            await navigate_robust(page, target_url)
+            return f"go_to_url:{target_url[:60]}"
+        except Exception as e:
+            return f"go_to_url_failed:{e}"
+
     if kind == "click" and target:
+        aria_snippet = target[:40].replace("\\", "\\\\").replace('"', '\\"')
         for factory in (
+            lambda: page.get_by_label(re.compile(re.escape(target[:60]), re.I)),
             lambda: page.get_by_role("button", name=re.compile(re.escape(target[:60]), re.I)),
             lambda: page.get_by_role("menuitem", name=re.compile(re.escape(target[:60]), re.I)),
             lambda: page.get_by_role("option", name=re.compile(re.escape(target[:60]), re.I)),
             lambda: page.get_by_role("link", name=re.compile(re.escape(target[:60]), re.I)),
             lambda: page.get_by_role("checkbox", name=re.compile(re.escape(target[:60]), re.I)),
             lambda: page.get_by_text(target[:80], exact=False),
-            lambda: page.locator(f'[aria-label*="{target[:40]}"]'),
+            lambda: page.locator(f'[aria-label*="{aria_snippet}"]'),
         ):
             loc = factory()
             if await loc.count() > 0:
                 await loc.first.click(timeout=10000)
                 await page.wait_for_timeout(900)
                 return f"clicked:{target[:60]}"
-        raise ValueError(f"click target not found: {target[:60]}")
+        return f"click_not_found:{target[:60]}"
 
     if kind == "type" and target:
         for factory in (
@@ -138,7 +237,7 @@ async def execute_action(page, action: dict[str, Any]) -> str:
                 await loc.first.fill(text, timeout=8000)
                 await page.wait_for_timeout(400)
                 return f"typed:{target[:40]}"
-        raise ValueError(f"type target not found: {target[:40]}")
+        return f"type_not_found:{target[:40]}"
 
     if kind == "drag":
         fx = float(action.get("from_x", 0))
@@ -152,7 +251,7 @@ async def execute_action(page, action: dict[str, Any]) -> str:
         await page.wait_for_timeout(500)
         return f"drag:{fx},{fy}->{tx},{ty}"
 
-    raise ValueError(f"unsupported action: {action}")
+    return f"unsupported_action:{kind or 'unknown'}"
 
 
 async def extract_huggingface_top_models(page, *, limit: int = 3) -> str:

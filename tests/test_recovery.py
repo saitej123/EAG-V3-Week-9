@@ -48,6 +48,45 @@ def test_classify_failure_case_insensitive_timeout():
     assert classify_failure("TIMEOUT waiting for gateway") == "transient"
 
 
+def test_plan_recovery_skips_missing_python_modules():
+    from super_browser.recovery import plan_recovery
+
+    decision = plan_recovery(
+        failed_skill="browser",
+        error_text="No module named 'trafilatura'",
+        failed_node_id="n:2",
+    )
+    assert decision.action == "skip"
+    assert decision.reason == "missing_dependency"
+
+
+def test_plan_recovery_skips_missing_playwright_browser():
+    from super_browser.recovery import plan_recovery
+
+    decision = plan_recovery(
+        failed_skill="browser",
+        error_text=(
+            "BrowserType.launch: Executable doesn't exist at "
+            "/root/.cache/ms-playwright/chromium_headless_shell-1217/..."
+        ),
+        failed_node_id="n:2",
+    )
+    assert decision.action == "skip"
+    assert decision.reason == "missing_dependency"
+
+
+def test_plan_recovery_skips_browser_cascade_exhausted():
+    from super_browser.recovery import plan_recovery
+
+    decision = plan_recovery(
+        failed_skill="browser",
+        error_text="All browser layers failed; comparison task requires ≥3 visible actions.",
+        failed_node_id="n:12",
+    )
+    assert decision.action == "skip"
+    assert decision.reason == "browser_exhausted"
+
+
 # --- critic splice (4 tests) -------------------------------------------------------
 
 def _distiller_planner_output() -> PlannerOutput:
@@ -178,6 +217,69 @@ def test_upstream_failure_queues_one_recovery_planner(tmp_path, monkeypatch):
         assert len(planners) == 1
         meta = ex.graph.dg.nodes[planners[0]]["metadata"]
         assert meta.get("failure_report", {}).get("skill") == "distiller"
+
+    asyncio.run(_run())
+
+
+def test_recovery_planner_ready_after_failed_browser_skips_branch(tmp_path, monkeypatch):
+    async def _run() -> None:
+        ex, store = _executor_with_store(tmp_path, monkeypatch)
+        p = ex.graph.add_node_from_spec(NodeSpec(skill="planner", metadata={"label": "p"}))
+        b = ex.graph.add_node_from_spec(NodeSpec(skill="browser", metadata={"label": "browse"}))
+        d = ex.graph.add_node_from_spec(
+            NodeSpec(skill="distiller", inputs=["n:browse"], metadata={"label": "d"})
+        )
+        f = ex.graph.add_node_from_spec(NodeSpec(skill="formatter", inputs=["n:d"], metadata={"label": "out"}))
+        ex.graph.dg.add_edge(p, b)
+        ex.graph.dg.add_edge(b, d)
+        ex.graph.dg.add_edge(d, f)
+        ex.states = {
+            p: NodeState(node_id=p, skill="planner", status=NodeStatus.complete),
+            b: NodeState(node_id=b, skill="browser", status=NodeStatus.running),
+            d: NodeState(node_id=d, skill="distiller", status=NodeStatus.pending),
+            f: NodeState(node_id=f, skill="formatter", status=NodeStatus.pending),
+        }
+        await ex._handle_node_failure(b, "browser", "selector #price not found on product grid", ex.states[b])
+        recovery_ids = [
+            n
+            for n, nd in ex.graph.dg.nodes(data=True)
+            if nd.get("skill") == "planner" and n != p
+        ]
+        assert len(recovery_ids) == 1
+        rid = recovery_ids[0]
+        assert ex.states[d].status == NodeStatus.skipped
+        assert ex.states[f].status == NodeStatus.skipped
+        assert rid in ex.graph.ready_nodes(ex.states)
+
+    asyncio.run(_run())
+
+
+def test_browser_cascade_exhausted_does_not_replan(tmp_path, monkeypatch):
+    async def _run() -> None:
+        ex, store = _executor_with_store(tmp_path, monkeypatch)
+        p = ex.graph.add_node_from_spec(NodeSpec(skill="planner", metadata={"label": "p"}))
+        b = ex.graph.add_node_from_spec(NodeSpec(skill="browser", metadata={"label": "browse"}))
+        ex.graph.dg.add_edge(p, b)
+        ex.states = {
+            p: NodeState(node_id=p, skill="planner", status=NodeStatus.complete),
+            b: NodeState(node_id=b, skill="browser", status=NodeStatus.running),
+        }
+        await ex._handle_node_failure(
+            b,
+            "browser",
+            "All browser layers failed; comparison task requires ≥3 visible actions.",
+            ex.states[b],
+        )
+        recovery_ids = [
+            n for n, nd in ex.graph.dg.nodes(data=True) if nd.get("skill") == "planner" and n != p
+        ]
+        assert recovery_ids == []
+        assert ex._fatal_error is None
+        formatters = [
+            n for n, nd in ex.graph.dg.nodes(data=True) if nd.get("skill") == "formatter"
+        ]
+        assert len(formatters) == 1
+        assert formatters[0] in ex.graph.ready_nodes(ex.states)
 
     asyncio.run(_run())
 

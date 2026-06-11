@@ -43,7 +43,7 @@ async def _run(args: argparse.Namespace) -> str:
 def main() -> int:
     ids = _query_ids()
     parser = argparse.ArgumentParser(description="DAG orchestrator CLI")
-    parser.add_argument("query_id", nargs="?", choices=ids, help="Demo query id (hello, P, C_pass, …)")
+    parser.add_argument("query_id", nargs="?", choices=ids, help="Browser query id (COMP, DEAL, TICKET, STACK, FORGE, B1–B4)")
     parser.add_argument("--query", "-q", default="", help="Free-text user query")
     parser.add_argument("--session", default=None, help="Session id for a new run")
     parser.add_argument("--resume", metavar="SID", default=None, help="Resume session id (reads query.txt)")

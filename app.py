@@ -22,7 +22,7 @@ load_dotenv(BASE_DIR / ".env")
 
 _templates_dir = BASE_DIR / "templates"
 
-_RUNTIME_MODULES = ("faiss",)
+_RUNTIME_MODULES = ("faiss", "trafilatura", "httpx", "playwright", "yaml")
 
 
 def _missing_runtime_modules() -> list[str]:
@@ -35,15 +35,31 @@ def _missing_runtime_modules() -> list[str]:
     return missing
 
 
+def _project_venv_site_on_path() -> bool:
+    """True when this process loads packages from ``<project>/.venv`` (uv uses a shared base python)."""
+    site = BASE_DIR / ".venv" / "lib"
+    if not site.is_dir():
+        return False
+    for entry in sys.path:
+        try:
+            resolved = Path(entry).resolve()
+        except OSError:
+            continue
+        if site.resolve() in resolved.parents or resolved == site.resolve():
+            return True
+    return False
+
+
 def _runtime_env_hint() -> str:
-    project_venv = (BASE_DIR / ".venv").resolve()
-    exe = Path(sys.executable).resolve()
-    if project_venv.is_dir() and project_venv not in exe.parents:
+    missing = _missing_runtime_modules()
+    if missing and not _project_venv_site_on_path():
         return (
-            f"Server is using {exe}, not this project's .venv. "
-            "Stop uvicorn and run: uv sync && uv run uvicorn app:app --reload --port 8080"
+            "Wrong Python environment — packages are not loaded from this project's .venv. "
+            "Stop uvicorn and run: ./scripts/serve.sh"
         )
-    return "Install deps with: uv sync && uv run uvicorn app:app --reload --port 8080"
+    if missing:
+        return "Install deps with: uv sync && ./scripts/serve.sh"
+    return "Install deps with: uv sync && ./scripts/serve.sh"
 
 
 def _runtime_env_detail() -> str | None:
@@ -282,6 +298,9 @@ async def _stop_agent_run(*, log_user_stop: bool = True) -> dict[str, Any]:
 
 
 def _try_begin_run() -> JSONResponse | None:
+    runtime_error = _runtime_env_detail()
+    if runtime_error:
+        return JSONResponse({"status": "error", "detail": runtime_error}, status_code=503)
     _clear_stale_run_busy()
     with _ops_lock:
         global _run_busy
@@ -674,7 +693,7 @@ async def api_dag_browser_replay(session_id: str, node_id: str | None = None):
 
 @app.get("/api/queries/dag")
 async def api_dag_queries():
-    """Built-in DAG demo queries (hello–K + parallel, critic, coder, prosody analyst, calculator)."""
+    """Browser comparison assignment queries (COMP, creative comparisons, cascade demos)."""
     try:
         from super_browser.catalog import assignment_payload, validate_assignment_corpus
 
@@ -690,9 +709,28 @@ async def api_dag_queries():
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
+@app.post("/api/browser/reseed-sessions")
+async def api_browser_reseed_sessions():
+    """Re-create browser reference sessions (dag_*_ref) after state reset — UI replay demos."""
+    with _ops_lock:
+        if _run_busy:
+            return JSONResponse(
+                {"status": "busy", "detail": "Cannot reseed while an agent run is in progress."},
+                status_code=400,
+            )
+    try:
+        from scripts.browser.seed_browser_sessions import seed_browser_reference_sessions
+
+        created = await asyncio.to_thread(seed_browser_reference_sessions)
+        return {"status": "success", "session_ids": created}
+    except Exception as e:
+        logger.error(f"[UI] browser reseed failed: {e}")
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
+
+
 @app.get("/api/queries/browser")
 async def api_browser_queries():
-    """Browser cascade tasks (COMP + B1–B4) for the Super Browser UI."""
+    """Browser comparison assignment queries (COMP, creative comparisons, cascade demos)."""
     try:
         from super_browser.catalog import browser_queries_payload, validate_assignment_corpus
 

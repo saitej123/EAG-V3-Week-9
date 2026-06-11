@@ -50,6 +50,28 @@ def test_draw_marks_returns_png():
     assert out[:8] == b"\x89PNG\r\n\x1a\n"
 
 
+def test_draw_marks_handles_inverted_boxes():
+    from io import BytesIO
+
+    from PIL import Image
+
+    from super_browser.browser.highlight import normalize_box
+
+    assert normalize_box({"x": 10, "y": 10, "width": -5, "height": -3}) == {
+        "x": 5.0,
+        "y": 7.0,
+        "width": 5.0,
+        "height": 3.0,
+    }
+    img = Image.new("RGB", (40, 40), color=(255, 255, 255))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    png = buf.getvalue()
+    items = [{"mark": 1, "box": {"x": 2, "y": 0, "width": 8, "height": -2}, "label": "B"}]
+    out = draw_marks(png, items, device_pixel_ratio=1.0)
+    assert out[:8] == b"\x89PNG\r\n\x1a\n"
+
+
 def test_decode_image_payload_accepts_data_uri():
     raw = base64.b64encode(b"hello").decode()
     data_uri = f"data:image/png;base64,{raw}"
@@ -95,6 +117,33 @@ def test_detect_gateway_block():
 
     assert detect_gateway_block("Let's confirm you are human before continuing") is True
     assert detect_gateway_block("Hacker News top stories") is False
+
+
+def test_layer_extract_escalates_on_captcha_html(monkeypatch):
+    import asyncio
+
+    from super_browser.browser import extract as extract_mod
+
+    async def fake_get(*args, **kwargs):
+        class Resp:
+            text = "<html><div class=\"g-recaptcha\">confirm you are human</div></html>"
+
+            def raise_for_status(self):
+                return None
+
+        return Resp()
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        get = fake_get
+
+    monkeypatch.setattr(extract_mod.httpx, "AsyncClient", lambda **kwargs: FakeClient())
+    assert asyncio.run(extract_mod.layer_extract("https://huggingface.co/models", "models")) is None
 
 
 def test_browser_output_shape():
@@ -220,3 +269,93 @@ def test_comp_replay_has_comparison_table():
     assert report["comparison_table"]
     assert "| Model |" in report["comparison_table"]
     assert report["sections"][3]["count"] >= 3
+    assert report["sections"][4]["title"] == "Screenshots or page-state logs"
+
+
+def test_comparison_task_skips_static_extract_success(monkeypatch):
+    import asyncio
+
+    calls: list[str] = []
+
+    async def fake_extract(url: str, goal: str):
+        calls.append("extract")
+        return {
+            "path": "extract",
+            "url": url,
+            "content": "models " * 100,
+            "llm_calls": 0,
+            "transcript": [],
+        }
+
+    async def fake_render(url: str, goal: str, *, page=None):
+        calls.append("render")
+        return {
+            "path": "extract",
+            "url": url,
+            "content": "models " * 100,
+            "llm_calls": 0,
+            "transcript": ["render:playwright"],
+        }
+
+    async def fake_a11y(url: str, goal: str, llm, *, page=None):
+        calls.append("a11y")
+        return {
+            "path": "a11y",
+            "url": url,
+            "content": "top 3 models",
+            "turns": 3,
+            "transcript": ["clicked:a", "clicked:b", "clicked:c"],
+            "llm_calls": 3,
+        }
+
+    async def fake_nav(page, url):
+        return url
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_session():
+        class FakePage:
+            url = "https://huggingface.co/models"
+
+        yield FakePage()
+
+    monkeypatch.setattr("super_browser.browser.skill.layer_extract", fake_extract)
+    monkeypatch.setattr("super_browser.browser.skill.layer_render", fake_render)
+    monkeypatch.setattr("super_browser.browser.skill.layer_a11y", fake_a11y)
+    monkeypatch.setattr("super_browser.browser.skill.layer_deterministic", lambda *a, **k: None)
+    monkeypatch.setattr("super_browser.browser.skill.layer_vision", lambda *a, **k: None)
+    monkeypatch.setattr("super_browser.browser.skill.navigate_robust", fake_nav)
+    monkeypatch.setattr("super_browser.browser.skill.live_page_blocked", lambda page: False)
+    monkeypatch.setattr("super_browser.browser.skill.browser_session", fake_session)
+
+    async def _run() -> None:
+        from super_browser.browser.skill import run_browser_cascade
+
+        out, err = await run_browser_cascade(
+            "https://huggingface.co/models",
+            "Compare top 3 Hugging Face text-generation models",
+            llm=object(),
+            min_browser_actions=3,
+        )
+        assert "extract" not in calls
+        assert "a11y" in calls
+        assert out.path == "a11y"
+        assert len(out.actions) >= 3
+        assert err is None
+
+    asyncio.run(_run())
+
+
+def test_action_count_includes_vision_turns():
+    from super_browser.browser.skill import _action_count
+
+    assert _action_count({"transcript": ["vision_turn:1", "vision_turn:2", "vision_turn:3"]}) == 3
+    assert _action_count({"transcript": ["render:playwright", "vision_turn:1"]}) == 1
+
+
+def test_format_browser_path_labels():
+    from super_browser.browser.replay import format_browser_path
+
+    assert "blocked" in format_browser_path("gateway_blocked")
+    assert format_browser_path("a11y").startswith("a11y")

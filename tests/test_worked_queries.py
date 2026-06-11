@@ -59,12 +59,22 @@ K_PLAN = PlannerOutput(
     ],
 )
 
+COMP_PLAN = PlannerOutput(
+    rationale="Compare HF models via browser.",
+    nodes=[
+        NodeSpec(skill="browser", inputs=["USER_QUERY"], metadata={"label": "browse", "question": "HF top 3 models"}),
+        NodeSpec(skill="distiller", inputs=["n:browse"], metadata={"label": "table", "question": "comparison table"}),
+        NodeSpec(skill="formatter", inputs=["n:table"], metadata={"label": "out"}),
+    ],
+)
+
 PLANS = {
     "hello": HELLO_PLAN,
     "A": SHANNON_PLAN,
     "I": POPULATIONS_PLAN,
     "J": FAILFAST_PLAN,
     "K": K_PLAN,
+    "COMP": COMP_PLAN,
 }
 
 
@@ -77,14 +87,14 @@ def _extend(g: Graph, plan: PlannerOutput) -> None:
     g.extend_from(p, plan)
 
 
-@pytest.mark.parametrize("query_id", ["hello", "A", "I", "J", "K"])
-def test_worked_queries_spec_lists_five(query_id: str):
+@pytest.mark.parametrize("query_id", ["COMP"])
+def test_worked_queries_spec_lists_one(query_id: str):
     payload = worked_queries_payload()
-    assert payload["query_count"] == 5
+    assert payload["query_count"] == 1
     assert get_dag_query(query_id) is not None
 
 
-@pytest.mark.parametrize("query_id", ["hello", "A", "I", "J", "K"])
+@pytest.mark.parametrize("query_id", ["COMP"])
 def test_worked_query_dag_shape(query_id: str):
     row = get_dag_query(query_id)
     assert row is not None
@@ -131,11 +141,13 @@ def test_query_k_resume_from_partial_researcher_layer(tmp_path, monkeypatch):
 
     monkeypatch.setattr(pers_mod, "SESSIONS_DIR", tmp_path / "sessions")
     sid = "dag_K_resumed_v2"
-    row = get_dag_query("K")
-    assert row is not None
+    k_query = (
+        "Compare Lagos, Cairo, and Kinshasa: population and growth rate for each; "
+        "which city is growing fastest?"
+    )
 
     store = SessionStore(sid)
-    store.save_query(str(row["query"]))
+    store.save_query(k_query)
     g = Graph(SkillRegistry())
     _extend(g, K_PLAN)
     store.save_graph(g.dg)
@@ -219,7 +231,7 @@ def test_load_session_hydrates_downstream_nodes(tmp_path, monkeypatch):
 
 
 def test_query_a_graph_shape_planner_researcher_distiller_critic_formatter():
-    """Query A: planner → researcher → distiller → (auto critic) → formatter (5 nodes)."""
+    """Inline Shannon plan: planner → researcher → distiller → (auto critic) → formatter (5 nodes)."""
     g = Graph(SkillRegistry())
     _extend(g, SHANNON_PLAN)
     skills = _skills_in_graph(g)
@@ -232,7 +244,8 @@ def test_query_a_graph_shape_planner_researcher_distiller_critic_formatter():
     assert g.dg.has_edge(critic, formatter)
 
 
-def test_query_a_has_wikipedia_target():
-    dag_a = get_dag_query("A")
-    assert dag_a is not None
-    assert "wikipedia.org/wiki/Claude_Shannon" in dag_a["query"]
+def test_comp_query_in_corpus():
+    comp = get_dag_query("COMP")
+    assert comp is not None
+    assert "huggingface.co/models" in comp["query"]
+    assert comp.get("min_browser_actions", 0) >= 3

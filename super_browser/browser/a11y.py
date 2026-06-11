@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from loguru import logger
 
-from ..llm_retry import loads_json_lenient
+from .vlm_parse import parse_action_json
 from .dom import collect_clickables
 from .ledger import apply_cost_fields
 from .driver import (
@@ -20,6 +20,7 @@ from .driver import (
     fence_actions,
     normalize_actions,
 )
+from .navigation import navigate_robust, page_body_fallback
 from .playwright_ctx import browser_page
 
 _MAX_TURNS = 8
@@ -117,15 +118,32 @@ async def run_a11y_loop(page, goal: str, llm: Any) -> TurnResult | None:
                 break
 
         prompt = a11y_turn_prompt(goal=goal, tree=tree, url=page.url, turn=turn)
-        raw_text = llm.chat(agent="browser", prompt=prompt, temperature=0.2, max_tokens=512)
+        try:
+            raw_text = llm.chat(agent="browser", prompt=prompt, temperature=0.2, max_tokens=512)
+        except Exception as e:
+            started_notes.append(f"llm_error:t{turn}:{e}")
+            continue
         llm_calls += 1
         # Rough token estimate when gateway usage metadata is unavailable (~prompt + ~120 out)
         input_tokens += max(len(prompt) // 4, 1)
         output_tokens += max(len(str(raw_text)) // 4, 40)
-        raw = loads_json_lenient(raw_text)
-        if not isinstance(raw, dict):
-            logger.info("[browser] a11y LLM returned non-JSON — escalating")
-            return None
+        raw = parse_action_json(str(raw_text or ""), allow_prose_done=True)
+        if raw.get("action") == "noop" and not str(raw_text or "").strip():
+            started_notes.append(f"llm_empty:t{turn}")
+            continue
+        if raw.get("action") == "noop":
+            started_notes.append(f"llm_non_json:t{turn}")
+            if len(str(raw_text or "")) >= 120:
+                return TurnResult(
+                    notes=started_notes,
+                    done=True,
+                    answer=str(raw_text).strip()[:12000],
+                    turns=turn,
+                    llm_calls=llm_calls,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+            continue
 
         if _refuse_empty_done(raw, tree, goal):
             logger.info("[browser] a11y refused empty-tree done — escalating to vision")
@@ -167,7 +185,7 @@ async def run_a11y_loop(page, goal: str, llm: Any) -> TurnResult | None:
                 notes.append(await execute_action(page, action))
             except Exception as e:
                 notes.append(f"action_failed:{e}")
-                break
+                continue
         started_notes.extend(notes)
 
         # HF: auto-extract when filters appear applied and cards are visible
@@ -187,42 +205,54 @@ async def run_a11y_loop(page, goal: str, llm: Any) -> TurnResult | None:
     return None
 
 
-async def layer_a11y(url: str, goal: str, llm: Any) -> dict[str, Any] | None:
+async def layer_a11y(url: str, goal: str, llm: Any, *, page=None) -> dict[str, Any] | None:
     """Navigate with Playwright; use a11y tree + text LLM for actions."""
     started = time.time()
     url = _initial_url(url, goal)
 
-    async with browser_page() as (_pw, _browser, page):
-        await page.goto(url, wait_until="domcontentloaded", timeout=45000)
-        await page.wait_for_timeout(1200)
+    async def _on_page(pg) -> dict[str, Any] | None:
+        try:
+            if page is None:
+                await navigate_robust(pg, url)
 
-        result = await run_a11y_loop(page, goal, llm)
-        if result and result.done and result.answer:
-            return apply_cost_fields(
-                {
+            result = await run_a11y_loop(pg, goal, llm)
+            if result and result.done and result.answer:
+                return apply_cost_fields(
+                    {
+                        "path": "a11y",
+                        "url": pg.url,
+                        "content": result.answer,
+                        "content_type": "text/plain",
+                        "turns": result.turns,
+                        "transcript": result.notes,
+                        "elapsed_s": round(time.time() - started, 2),
+                        "llm_calls": result.llm_calls,
+                        "input_tokens": result.input_tokens,
+                        "output_tokens": result.output_tokens,
+                    }
+                )
+
+            body = await page_body_fallback(pg, min_chars=400)
+            if body and not _tree_too_empty(await a11y_snapshot(pg)):
+                return {
                     "path": "a11y",
-                    "url": page.url,
-                    "content": result.answer,
+                    "url": pg.url,
+                    "content": body,
                     "content_type": "text/plain",
-                    "turns": result.turns,
-                    "transcript": result.notes,
+                    "transcript": ["fallback:body_text"],
                     "elapsed_s": round(time.time() - started, 2),
-                    "llm_calls": result.llm_calls,
-                    "input_tokens": result.input_tokens,
-                    "output_tokens": result.output_tokens,
+                    "llm_calls": 0,
                 }
-            )
+        except Exception as e:
+            logger.warning(f"[browser] a11y page error: {e}")
+        return None
 
-        body = await page.locator("body").inner_text(timeout=8000)
-        body = re.sub(r"\n{3,}", "\n\n", body).strip()
-        if len(body) >= 400 and not _tree_too_empty(await a11y_snapshot(page)):
-            return {
-                "path": "a11y",
-                "url": page.url,
-                "content": body[:12000],
-                "content_type": "text/plain",
-                "transcript": [],
-                "elapsed_s": round(time.time() - started, 2),
-                "llm_calls": 0,
-            }
-    return None
+    try:
+        if page is not None:
+            return await _on_page(page)
+
+        async with browser_page() as (_pw, _browser, pg):
+            return await _on_page(pg)
+    except Exception as e:
+        logger.warning(f"[browser] a11y layer error: {e}")
+        return None

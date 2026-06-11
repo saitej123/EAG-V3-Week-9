@@ -1,0 +1,26 @@
+# Super Browser Agent — runtime dependencies (unpinned)
+# Install: pip install -r requirements.txt && playwright install chromium
+# Prefer uv for this repo: uv sync
+
+crawl4ai
+duckduckgo-search
+faiss-cpu
+fastapi
+google-genai
+httpx
+jinja2
+loguru
+mcp
+networkx
+numpy
+pillow
+playwright
+pymupdf
+pydantic
+python-dotenv
+python-multipart
+pyyaml
+sse-starlette
+tavily-python
+trafilatura
+uvicorn

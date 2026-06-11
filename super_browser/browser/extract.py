@@ -12,7 +12,6 @@ import trafilatura
 
 from ..search_providers import HTTP_FETCH_TIMEOUT_SEC, _HTTP_HEADERS
 from .dom import detect_gateway_block
-from .ledger import apply_cost_fields
 
 _MIN_CHARS = 200
 
@@ -73,7 +72,11 @@ async def layer_extract(url: str, goal: str) -> dict[str, Any] | None:
     try:
         async with httpx.AsyncClient(
             timeout=HTTP_FETCH_TIMEOUT_SEC,
-            headers=_HTTP_HEADERS,
+            headers={
+                **_HTTP_HEADERS,
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+            },
             follow_redirects=True,
         ) as client:
             resp = await client.get(url)
@@ -83,17 +86,8 @@ async def layer_extract(url: str, goal: str) -> dict[str, Any] | None:
         return None
 
     if detect_gateway_block(html):
-        return apply_cost_fields(
-            {
-                "path": "gateway_blocked",
-                "url": url,
-                "content": None,
-                "gateway_blocked": True,
-                "error_code": "gateway_blocked",
-                "elapsed_s": round(time.time() - started, 2),
-                "llm_calls": 0,
-            }
-        )
+        # Static httpx fetch only — escalate to Playwright layers (a11y/vision).
+        return None
 
     content = trafilatura.extract(
         html,

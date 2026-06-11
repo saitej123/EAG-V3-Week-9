@@ -27,11 +27,11 @@ def _worked_query_ids() -> set[str]:
     ids = spec.get("worked_query_ids")
     if isinstance(ids, list) and ids:
         return {str(x) for x in ids}
-    return {"hello", "A", "I", "J", "K"}
+    return {"COMP"}
 
 
 def load_worked_queries() -> list[dict[str, Any]]:
-    """Subset of assignment queries used for structural shape tests (hello–K)."""
+    """Subset of assignment queries used for structural shape tests (browser comparison)."""
     wanted = _worked_query_ids()
     return [row for row in load_assignment_queries() if str(row.get("id", "")) in wanted]
 
@@ -41,7 +41,7 @@ def worked_queries_payload() -> dict[str, Any]:
     rows = load_worked_queries()
     spec = load_assignment_spec()
     return {
-        "description": "Worked DAG queries (hello–K) — shapes in demo query corpus.",
+        "description": "Worked browser comparison query (COMP) — shape in demo query corpus.",
         "session_root": spec.get("session_root", "state/sessions"),
         "query_count": len(rows),
         "queries": rows,
@@ -67,13 +67,12 @@ def load_assignment_queries() -> list[dict[str, Any]]:
 
 
 _REQUIRED_QUERY_FIELDS = ("id", "part", "title", "query", "wall_clock_sec")
-_EXPECTED_QUERY_IDS = frozenset(
-    {"hello", "A", "I", "J", "K", "P", "C_pass", "C_fail", "M", "PROS", "COMP", "B1", "B2", "B3", "B4"}
-)
+_EXPECTED_QUERY_IDS = frozenset({"COMP", "DEAL", "TICKET", "STACK", "FORGE", "B1", "B2", "B3", "B4"})
+_BROWSER_QUERY_IDS = _EXPECTED_QUERY_IDS
 
 
 def _build_submission_outline(spec: dict[str, Any]) -> list[dict[str, Any]]:
-    """Ordered parts 1–5 for UI (matches submission checklist)."""
+    """Ordered submission sections for UI (browser-only assignment)."""
     outline = spec.get("submission_outline")
     if isinstance(outline, list) and outline:
         return [
@@ -131,6 +130,16 @@ def validate_assignment_corpus() -> list[str]:
                 errors.append(f"{qid}: wall_clock_sec must be positive")
         except (TypeError, ValueError):
             errors.append(f"{qid}: invalid wall_clock_sec")
+        min_actions = row.get("min_browser_actions")
+        if min_actions is not None:
+            try:
+                if int(min_actions) < 3:
+                    errors.append(f"{qid}: min_browser_actions must be >= 3")
+            except (TypeError, ValueError):
+                errors.append(f"{qid}: invalid min_browser_actions")
+        featured = str(row.get("featured") or "")
+        if featured in {"browser_design", "browser_creative"} and not min_actions:
+            errors.append(f"{qid}: comparison task missing min_browser_actions")
 
     by_id = {str(r["id"]): r for r in rows if r.get("id")}
     for dq in spec.get("design_queries") or []:
@@ -184,16 +193,40 @@ def expected_flow_for_query(row: dict[str, Any]) -> str:
     return " → ".join(parts)
 
 
+def min_browser_actions_for_text(text: str) -> int:
+    """Resolve comparison-task action minimum from corpus query text."""
+    blob = (text or "").strip()
+    if not blob:
+        return 0
+    for row in load_assignment_queries():
+        try:
+            minimum = int(row.get("min_browser_actions") or 0)
+        except (TypeError, ValueError):
+            continue
+        if minimum <= 0:
+            continue
+        corpus_q = str(row.get("query") or "").strip()
+        if not corpus_q:
+            continue
+        if corpus_q == blob or corpus_q[:120] in blob or blob[:120] in corpus_q:
+            return minimum
+    return 0
+
+
 def enrich_assignment_query(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
     out["expected_flow"] = expected_flow_for_query(row)
     return out
 
 
-def assignment_payload() -> dict[str, Any]:
+def browser_queries_payload() -> dict[str, Any]:
+    """Browser comparison corpus for Super Browser UI and /api/queries/dag."""
     spec = load_assignment_spec()
     queries = [enrich_assignment_query(q) for q in spec.get("queries", [])]
     outline = _build_submission_outline(spec)
+    design = [
+        dq for dq in spec.get("design_queries", []) if str(dq.get("kind") or "") == "browser"
+    ]
     groups = [
         {
             "part": row["part"],
@@ -208,48 +241,18 @@ def assignment_payload() -> dict[str, Any]:
         "log_dir": spec.get("log_dir", "logs/dag"),
         "query_count": len(queries),
         "queries": queries,
-        "design_queries": spec.get("design_queries", []),
-        "browser_findings": spec.get("browser_findings", {}),
-        "browser_reference_runs": spec.get("browser_reference_runs", []),
-        "groups": groups,
-        "outline": outline,
-    }
-
-
-_BROWSER_QUERY_IDS = frozenset({"COMP", "B1", "B2", "B3", "B4"})
-
-
-def browser_queries_payload() -> dict[str, Any]:
-    """Browser cascade tasks only (COMP + layer demos B1–B4) for the Super Browser UI."""
-    spec = load_assignment_spec()
-    queries = [
-        enrich_assignment_query(q)
-        for q in spec.get("queries", [])
-        if str(q.get("id", "")) in _BROWSER_QUERY_IDS
-    ]
-    outline = [row for row in _build_submission_outline(spec) if int(row.get("part") or 0) == 6]
-    design = [
-        dq for dq in spec.get("design_queries", []) if str(dq.get("kind") or "") == "browser"
-    ]
-    groups = [
-        {
-            "part": row["part"],
-            "label": row["title"],
-            "query_ids": row["query_ids"],
-        }
-        for row in outline
-    ]
-    return {
-        "description": "Browser cascade — comparison task (COMP) and layer demos (B1–B4).",
-        "session_root": spec.get("session_root", "state/sessions"),
-        "query_count": len(queries),
-        "queries": queries,
         "design_queries": design,
         "browser_findings": spec.get("browser_findings", {}),
         "browser_reference_runs": spec.get("browser_reference_runs", []),
         "groups": groups,
         "outline": outline,
+        "browser_only": True,
     }
+
+
+def assignment_payload() -> dict[str, Any]:
+    """Alias for browser-only assignment corpus."""
+    return browser_queries_payload()
 
 
 # --- Design deferrals (see docs/DEFERRALS.md) ---

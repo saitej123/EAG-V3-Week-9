@@ -5,91 +5,116 @@
 <h1 align="center">Super Browser Agent</h1>
 
 <p align="center">
-  <strong>Four-layer browser cascade · comparison tasks · replay viewer</strong>
+  <strong>Interactive comparison tasks · four-layer cascade · 8-section replay</strong>
 </p>
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
-  <a href="#browser-cascade">Browser cascade</a> ·
+  <a href="#why-browser">Why browser</a> ·
   <a href="#demo-queries">Demo queries</a> ·
   <a href="#replay">Replay</a>
 </p>
 
-A browser-first agent stack: compare and extract from live web pages through a cost-disciplined cascade (extract → deterministic → a11y → vision), orchestrated as a parallel skill DAG with critic recovery and a full replay viewer.
+A browser-first agent stack for **comparison tasks** that `web_search` and `fetch_url` cannot do: JS-rendered pages, filters, dropdowns, tabs, forms, and multi-step flows. The browser skill picks the cheapest correct cascade path; distiller + critic + formatter produce a comparison table; the replay viewer captures full evidence.
 
 ## Quick start
 
 ```bash
 uv sync
-playwright install chromium
 cp .env.example .env   # GEMINI_API_KEY
+./scripts/serve.sh     # installs Playwright Chromium if missing, then starts uvicorn
 uv run python scripts/browser/seed_browser_sessions.py
-./scripts/serve.sh
 ```
 
-Open **http://127.0.0.1:8080/**
+Open **http://127.0.0.1:8080/** — check **http://127.0.0.1:8080/health** shows `"status": "ok"` and `runtime_error: null`. If Chromium is missing, `./scripts/serve.sh` installs it automatically.
 
 | Action | Where |
 |--------|--------|
-| Browser comparison | Welcome chip **COMP** or sidebar **Tasks** |
-| Layer demos | **B1**–**B4** in sidebar **Tasks** |
-| Replay report | Sidebar **Graph & Replay** → **Replay report** |
-| Reference runs | Tasks → **Open COMP replay demo** |
+| Primary comparison | **COMP** (Hugging Face top-3 by likes) |
+| Other comparison picks | **DEAL**, **TICKET**, **STACK**, **FORGE** in Tasks sidebar |
+| Cascade lab | **B1**–**B4** |
+| Replay report (8 sections) | Auto-opens after browser run; or Tasks → **Open COMP replay demo** |
 
 ```bash
 uv run python scripts/dag/run_query.py COMP
 uv run python scripts/browser/export_browser_replay.py dag_COMP_ref -o replay.md
 ```
 
+## Why browser
+
+| Tool | Good for | Fails on |
+|------|----------|----------|
+| `web_search` / `fetch_url` | Static articles, docs | JS-rendered UI, click-revealed widgets |
+| **Browser skill** | Filters, sort, tabs, forms, product cards | Captcha walls (`blocked` → recover or report) |
+
+Comparison tasks require **≥3 visible browser actions** (search, filter, sort, open detail pages, etc.). Passive search snippets alone do not count.
+
 ## Browser cascade
 
-| Layer | Mechanism | When it wins |
-|-------|-----------|--------------|
-| 1 extract | httpx + trafilatura | Static HTML, news pages |
-| 2a deterministic | Playwright + CSS | Product pages, forms |
-| 2b a11y | Playwright + a11y tree + text LLM | Filters, dropdowns (HF models) |
-| 3 vision | Set-of-marks + VLM | Canvas-only / adversarial UI |
+Cheapest correct path wins:
 
-Primary task **COMP**: top-3 Hugging Face model comparison (≥3 visible browser actions). Reference session `dag_COMP_ref` uses path **a11y** with a comparison table in formatter output.
+| Layer | When it wins |
+|-------|--------------|
+| **Extract** | Static HTML (httpx + trafilatura; Playwright render fallback) |
+| **Deterministic** | Known CSS selectors (e.g. product pages) |
+| **A11y** | Filters, dropdowns, sort (HF models) |
+| **Vision** | Canvas-only / adversarial UI (**B4**) |
+| **Blocked** | Live captcha wall — replan or report |
+
+Optional backends: [BrowserOS](https://github.com/browseros-ai/BrowserOS) (`BROWSER_BACKEND=browseros`) or [browser-use](https://github.com/browser-use/browser-use) (`BROWSER_USE_ENABLED=1`). See [`docs/BROWSER.md`](docs/BROWSER.md).
 
 ## Demo queries
 
-Browser tasks only in the UI (**COMP**, **B1**–**B4**). Full assignment corpus: `corpus/dag/ASSIGNMENT.json` · [`docs/BROWSER.md`](docs/BROWSER.md)
+Full catalog: `corpus/dag/ASSIGNMENT.json` · [`docs/BROWSER.md`](docs/BROWSER.md)
 
-| Id | Focus |
-|----|-------|
-| **COMP** | Hugging Face top-3 comparison (≥3 browser actions) |
-| **B1**–**B4** | Cascade layer demos (extract, deterministic, a11y, vision) |
+| Id | Comparison task |
+|----|-----------------|
+| **COMP** | Top 3 Hugging Face text-generation models by likes |
+| **DEAL** | 3 laptops under ₹80,000 (Flipkart) |
+| **TICKET** | 3 IMAX showtimes in Bengaluru (BookMyShow) |
+| **STACK** | 5 AI coding tools — free vs paid plans |
+| **FORGE** | 5 CNC/VMC training institutes in Bangalore |
+| **B1**–**B4** | Cascade lab (extract → deterministic → a11y → vision) |
 
 ## Replay
 
-Eight-section report (Graph UI grey panel + export):
+Eight-section report (Graph UI + export):
+
+1. Original user goal  
+2. Planner DAG  
+3. Browser path chosen  
+4. Browser actions taken  
+5. Screenshots or page-state logs  
+6. Extracted data  
+7. Final comparison table  
+8. Turn count and cost summary  
 
 ```bash
 uv run python scripts/browser/export_browser_replay.py dag_COMP_ref
 ```
 
-Goal · planner DAG · browser path · actions · page logs · extracted data · comparison table · cost summary.
-
 ## Architecture
 
+Orchestrator (`super_browser/flow.py`) is unchanged. Browser behaviour plugs in via the skill catalogue + `super_browser/browser/`.
+
 ```
-USER_QUERY → Planner → Browser cascade → Distiller → Formatter
-                              │
-                              └── Replay viewer (/api/dag/browser-replay)
+User goal
+    → Planner
+    → Researcher (optional — find candidate URLs)
+    → Browser skill
+         Extract → Deterministic → A11y → Vision → Blocked
+    → Distiller
+    → Critic (auto after distiller)
+    → Formatter (comparison table)
+    → Replay viewer
 ```
 
 | Piece | Location |
 |-------|----------|
-| Package | `super_browser/` |
 | Browser cascade | `super_browser/browser/skill.py` |
 | Replay report | `super_browser/browser/replay.py` |
-| Orchestrator | `super_browser/flow.py` |
 | Skill catalogue | `agent_config.yaml` + `prompts/browser.md` |
-| Scripts | `scripts/browser/` |
-| Canvas fixture | `sandbox/browser/canvas-only.html` |
-
-Docs: [`docs/BROWSER.md`](docs/BROWSER.md) · [`docs/GLOSSARY.md`](docs/GLOSSARY.md)
+| Task corpus | `corpus/dag/ASSIGNMENT.json` |
 
 ## Tests
 
