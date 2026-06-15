@@ -54,7 +54,7 @@
         const base = sessionId
             ? '/api/dag/graph?session_id=' + encodeURIComponent(sessionId)
             : '/api/dag/graph';
-        return base + '&_ts=' + Date.now();
+        return base + (base.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + Date.now();
     };
 
     DagGraphController.prototype.destroy = function () {

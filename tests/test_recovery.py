@@ -75,6 +75,18 @@ def test_plan_recovery_skips_missing_playwright_browser():
     assert decision.reason == "missing_dependency"
 
 
+def test_plan_recovery_skips_all_browser_failures():
+    from super_browser.recovery import plan_recovery
+
+    decision = plan_recovery(
+        failed_skill="browser",
+        error_text="selector #price not found on product grid",
+        failed_node_id="n:12",
+    )
+    assert decision.action == "skip"
+    assert decision.reason == "browser_exhausted"
+
+
 def test_plan_recovery_skips_browser_cascade_exhausted():
     from super_browser.recovery import plan_recovery
 
@@ -152,6 +164,35 @@ def test_critic_fail_recovery_cap_per_target():
         ex.graph.critic_fail_counts["out"] = CRITIC_FAIL_CAP
         await ex._handle_critic(c, fail_json)
         assert sum(1 for _, nd in g.dg.nodes(data=True) if nd.get("skill") == "planner") == 1
+
+    asyncio.run(_run())
+
+
+def test_critic_global_recovery_planner_cap():
+    async def _run() -> None:
+        ex = Executor(registry=SkillRegistry())
+        g = ex.graph
+        g.add_node_from_spec(NodeSpec(skill="planner", metadata={"label": "recovery_1", "recovery": True}))
+        d = g.add_node_from_spec(NodeSpec(skill="distiller", metadata={"label": "d2"}))
+        c = g.add_node_from_spec(
+            NodeSpec(
+                skill="critic",
+                inputs=["n:d2"],
+                metadata={"label": "crit2", "target": "out2", "child": "out2"},
+            )
+        )
+        f = g.add_node_from_spec(NodeSpec(skill="formatter", inputs=["n:crit2"], metadata={"label": "out2"}))
+        g.dg.add_edge(d, c)
+        g.dg.add_edge(c, f)
+        ex.states = {
+            d: NodeState(node_id=d, skill="distiller", status=NodeStatus.complete, output="{}"),
+            c: NodeState(node_id=c, skill="critic", status=NodeStatus.complete),
+            f: NodeState(node_id=f, skill="formatter", status=NodeStatus.pending),
+        }
+        fail_json = '{"verdict": "fail", "rationale": "missing laptop rows"}'
+        await ex._handle_critic(c, fail_json)
+        assert sum(1 for _, nd in g.dg.nodes(data=True) if nd.get("skill") == "planner") == 1
+        assert ex.states[f].status == NodeStatus.pending
 
     asyncio.run(_run())
 
@@ -245,11 +286,12 @@ def test_recovery_planner_ready_after_failed_browser_skips_branch(tmp_path, monk
             for n, nd in ex.graph.dg.nodes(data=True)
             if nd.get("skill") == "planner" and n != p
         ]
-        assert len(recovery_ids) == 1
-        rid = recovery_ids[0]
+        assert recovery_ids == []
+        researchers = [n for n, nd in ex.graph.dg.nodes(data=True) if nd.get("skill") == "researcher"]
+        assert len(researchers) == 1
         assert ex.states[d].status == NodeStatus.skipped
         assert ex.states[f].status == NodeStatus.skipped
-        assert rid in ex.graph.ready_nodes(ex.states)
+        assert researchers[0] in ex.graph.ready_nodes(ex.states)
 
     asyncio.run(_run())
 
@@ -275,11 +317,36 @@ def test_browser_cascade_exhausted_does_not_replan(tmp_path, monkeypatch):
         ]
         assert recovery_ids == []
         assert ex._fatal_error is None
-        formatters = [
-            n for n, nd in ex.graph.dg.nodes(data=True) if nd.get("skill") == "formatter"
-        ]
+        researchers = [n for n, nd in ex.graph.dg.nodes(data=True) if nd.get("skill") == "researcher"]
+        distillers = [n for n, nd in ex.graph.dg.nodes(data=True) if nd.get("skill") == "distiller"]
+        formatters = [n for n, nd in ex.graph.dg.nodes(data=True) if nd.get("skill") == "formatter"]
+        assert len(researchers) == 1
+        assert len(distillers) == 1
         assert len(formatters) == 1
-        assert formatters[0] in ex.graph.ready_nodes(ex.states)
+        assert researchers[0] in ex.graph.ready_nodes(ex.states)
+
+    asyncio.run(_run())
+
+
+def test_browser_failure_queues_researcher_fallback(tmp_path, monkeypatch):
+    async def _run() -> None:
+        ex, store = _executor_with_store(tmp_path, monkeypatch)
+        p = ex.graph.add_node_from_spec(NodeSpec(skill="planner", metadata={"label": "p"}))
+        b1 = ex.graph.add_node_from_spec(NodeSpec(skill="browser", metadata={"label": "browse1"}))
+        ex.graph.dg.add_edge(p, b1)
+        ex.states = {
+            p: NodeState(node_id=p, skill="planner", status=NodeStatus.complete),
+            b1: NodeState(node_id=b1, skill="browser", status=NodeStatus.running),
+        }
+        await ex._handle_node_failure(
+            b1, "browser", "All browser layers failed.", ex.states[b1]
+        )
+        researchers = [n for n, nd in ex.graph.dg.nodes(data=True) if nd.get("skill") == "researcher"]
+        assert len(researchers) == 1
+        await ex._handle_node_failure(
+            b1, "browser", "All browser layers failed again.", ex.states[b1]
+        )
+        assert len([n for n, nd in ex.graph.dg.nodes(data=True) if nd.get("skill") == "researcher"]) == 1
 
     asyncio.run(_run())
 

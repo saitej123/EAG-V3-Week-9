@@ -119,7 +119,7 @@ def test_api_dag_queries_render_fields_for_ui():
 
     assert by_id["COMP"]["expected_flow"] == "planner → browser → distiller → critic → formatter"
     assert by_id["DEAL"]["featured"] == "browser_creative"
-    assert by_id["TICKET"]["title"] == "IMAX showdown — BookMyShow"
+    assert by_id["TICKET"]["title"] == "Trending repos — GitHub"
     assert by_id["B1"]["expected_path"] == "extract"
     assert by_id["B4"]["expected_path"] == "vision"
 
@@ -164,6 +164,42 @@ def test_api_browser_reseed_sessions():
     assert len(body["session_ids"]) == 5
 
 
+def test_api_browser_playwright_status():
+    from app import app
+
+    client = TestClient(app)
+    res = client.get("/api/browser/playwright-status")
+    assert res.status_code == 200
+    body = res.json()
+    assert "ready" in body
+    assert "playwright_chromium" in body or "ready" in body
+
+
+def test_api_run_agent_returns_session_id_when_query_id(monkeypatch):
+    import asyncio
+
+    import app as app_mod
+    from app import app
+
+    def fake_start(coro):
+        coro.close()
+        return asyncio.get_event_loop().create_task(asyncio.sleep(0))
+
+    monkeypatch.setattr(app_mod, "_start_run_task", fake_start)
+    client = TestClient(app)
+    try:
+        res = client.post(
+            "/run-agent",
+            json={"query": "Compare top 3 HF models", "query_id": "COMP"},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["status"] == "Agent started"
+        assert body.get("session_id", "").startswith("dag_COMP_")
+    finally:
+        app_mod._end_run()
+
+
 def test_api_browser_queries_html_page_includes_loader():
     from app import app
 
@@ -172,9 +208,13 @@ def test_api_browser_queries_html_page_includes_loader():
     assert "loadBrowserQueries" in html
     assert "dagQueriesScroll" in html
     assert "/api/queries/browser" in html
-    assert "chatWelcomeChips" in html
+    assert "pipeline-strip" in html
+    assert html.count("pipeline-step") >= 5
+    assert "Overview" in html
     assert "renderWelcomeDemoChips" in html
-    assert "sidebarTabTasksBtn" in html
+    assert "runtimeHealthBanner" in html
+    assert "runtimeHealthRetryBtn" in html
+    assert "/api/browser/playwright-status" in html
     assert "panelTasks" in html
     assert "mainTopTablist" not in html
     assert "dagGraphDownloadBtn" in html

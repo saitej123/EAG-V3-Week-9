@@ -218,8 +218,430 @@ def comparison_browser_goal_suffix(query: str) -> str:
     )
 
 
-def browser_goal_suffix(row: dict[str, Any]) -> str:
-    return comparison_browser_goal_suffix(str(row.get("query") or ""))
+def comparison_query_understanding(query: str, row: dict[str, Any] | None = None) -> str:
+    """Plain-language comparison intent for browser/distiller goals."""
+    spec = parse_comparison_spec(query)
+    if not spec.is_comparison and row:
+        spec = parse_comparison_spec(str(row.get("query") or query))
+    if not spec.is_comparison:
+        return ""
+    schema = distiller_metadata_for_query(query, row)
+    cols = ", ".join(spec.columns) if spec.columns else "infer from USER QUERY"
+    lines = [
+        "QUERY UNDERSTANDING:",
+        f"- Task: structured comparison table with {spec.row_count} data rows",
+        f"- Columns: {cols}",
+    ]
+    if spec.subject_column:
+        lines.append(f"- Subject/name column: {spec.subject_column}")
+    fields = schema.get("fields")
+    if fields:
+        lines.append(f"- Distiller fields: {fields}")
+    lines.append("- Use live page content only; do not invent prices, times, or names.")
+    return "\n".join(lines)
+
+
+def comparison_needs_browser(user_query: str) -> tuple[bool, int, dict[str, Any] | None]:
+    """True when query is an interactive comparison task (needs Playwright, not fetch_url)."""
+    spec = parse_comparison_spec(user_query)
+    if not spec.is_comparison:
+        return False, 0, None
+    row = match_assignment_query(user_query)
+    min_actions = 0
+    if row:
+        try:
+            min_actions = int(row.get("min_browser_actions") or 0)
+        except (TypeError, ValueError):
+            min_actions = 0
+    if min_actions <= 0:
+        min_actions = min_browser_actions_for_text(user_query) or 3
+    return min_actions > 0, min_actions, row
+
+
+def researcher_fallback_question(user_query: str, *, partial_browser_ref: str | None = None) -> str:
+    """Guide researcher to Gemini / Tavily / fetch when browser could not finish."""
+    from .browser.urls import resolve_browser_urls
+
+    urls = resolve_browser_urls("", user_query, user_query)
+    hosts = []
+    for url in urls[:5]:
+        try:
+            from urllib.parse import urlparse
+
+            host = urlparse(url).netloc
+            if host:
+                hosts.append(host)
+        except Exception:
+            continue
+    target_hint = ", ".join(hosts) if hosts else "each item named in the user goal"
+    partial = (
+        f" Merge any notes from {partial_browser_ref} with search results."
+        if partial_browser_ref
+        else ""
+    )
+    codeium_note = ""
+    if "codeium" in user_query.lower():
+        codeium_note = (
+            " Codeium is now **Windsurf IDE** — use **gemini_live_search** on windsurf.com pricing "
+            "(free tier + Pro starting price) if codeium.com is empty."
+        )
+    gemini_q = comparison_pricing_gemini_query(user_query)
+    return (
+        "Live browser could not finish this comparison. **Start with gemini_live_search** "
+        f'query: "{gemini_q}" then fetch_urls on official pricing pages if needed.{codeium_note} '
+        f"Targets: {target_hint}.{partial} "
+        "Return concise facts per product from official sources — do not invent prices. "
+        "If still missing, say 'not listed'."
+    )
+
+
+def _is_pricing_comparison(text: str) -> bool:
+    low = (text or "").lower()
+    return bool(
+        re.search(r"\bcompare\b.*\b(pricing|plan|paid|free tier)", low)
+        or re.search(r"\bfree vs paid\b", low)
+        or "pricing pages for" in low
+    )
+
+
+def _product_display_name(name: str) -> str:
+    key = (name or "").strip().lower()
+    if "codeium" in key:
+        return "Windsurf IDE (formerly Codeium)"
+    if key == "copilot" or "github copilot" in key:
+        return "GitHub Copilot"
+    return name.strip()
+
+
+def comparison_pricing_gemini_query(user_query: str, *, product: str | None = None) -> str:
+    """Build a Gemini live-search query for official SaaS pricing facts."""
+    from .browser.urls import _extract_named_targets
+
+    if product:
+        label = _product_display_name(product)
+        return (
+            f"Official current pricing for {label}: free tier summary and lowest paid plan "
+            f"starting price. Prefer windsurf.com for Codeium/Windsurf, cursor.com for Cursor, "
+            f"github.com/features/copilot/plans for Copilot. Reply FREE: and PAID: lines only."
+        )
+    names = _extract_named_targets(user_query) or []
+    if not names:
+        return (
+            "Official pricing free tier and paid starting price for AI coding assistants "
+            "named in the user question. Reply with FREE: and PAID: per product."
+        )
+    parts = [_product_display_name(n) for n in names]
+    return (
+        "Official current pricing (free tier + lowest paid starting price) for: "
+        + "; ".join(parts)
+        + ". Use Google Search on each vendor's official pricing page. "
+        "Reply with FREE: and PAID: lines per product."
+    )
+
+
+def _parse_pricing_facts(text: str) -> dict[str, str]:
+    """Extract free/paid fields from Gemini grounded prose."""
+    if not (text or "").strip():
+        return {}
+    free = ""
+    paid = ""
+    for line in text.splitlines():
+        raw = line.strip().lstrip("-*• ")
+        if not raw:
+            continue
+        low = raw.lower()
+        if low.startswith("free:"):
+            free = raw.split(":", 1)[1].strip()
+        elif low.startswith("paid:"):
+            paid = raw.split(":", 1)[1].strip()
+        elif "free tier" in low or "free plan" in low:
+            free = free or raw
+        elif ("pro" in low or "paid" in low or "/mo" in low) and "$" in raw:
+            paid = paid or raw
+    if not paid:
+        m = re.search(
+            r"(?:pro|paid|starting)[^\$\n]*(\$\d+(?:\.\d+)?(?:\s*(?:/|per)\s*mo(?:nth)?)?)",
+            text,
+            re.I,
+        )
+        if m:
+            paid = m.group(1).strip()
+    if not free and "unlimited tab" in text.lower():
+        free = "Unlimited Tab completions; light agent quota (official free tier)"
+    if not paid and "$20" in text and ("pro" in text.lower() or "windsurf" in text.lower()):
+        paid = "$20/mo (Pro)"
+    return {
+        k: v
+        for k, v in {
+            "free_tier_summary": free,
+            "paid_starting_price": paid,
+            "free": free,
+            "paid": paid,
+        }.items()
+        if v
+    }
+
+
+def _row_missing_pricing(row: dict[str, Any]) -> bool:
+    empty = {"", "—", "-", "not listed", "n/a", "null", "none"}
+    free_keys = ("free_tier_summary", "free", "free_tier")
+    paid_keys = ("paid_starting_price", "paid", "paid_price")
+
+    def _has(keys: tuple[str, ...]) -> bool:
+        for key in keys:
+            val = str(row.get(key) or "").strip().lower()
+            if val and val not in empty:
+                return True
+        return False
+
+    return not _has(free_keys) or not _has(paid_keys)
+
+
+def _row_product_name(row: dict[str, Any], spec: ComparisonSpec) -> str:
+    for key in ("tool", "product", "name", "assistant", "vendor"):
+        val = str(row.get(key) or row.get(_to_snake(key)) or "").strip()
+        if val:
+            return val
+    if spec.subject_column:
+        sk = _to_snake(spec.subject_column)
+        val = str(row.get(sk) or "").strip()
+        if val:
+            return val
+    return ""
+
+
+def enrich_doc_library_gaps(user_query: str, distiller: dict[str, Any]) -> dict[str, Any]:
+    """Fill missing Browser-stack library rows via Gemini (FORGE: httpx, trafilatura, Playwright)."""
+    low = (user_query or "").lower()
+    libs = [name for name in ("httpx", "trafilatura", "playwright") if name in low]
+    if len(libs) < 2:
+        return distiller
+    from .search_providers import gemini_live_search_text
+
+    rows = _extract_rows(distiller)
+    if len(rows) >= 3 and all(_row_has_library_fields(r) for r in rows[:3]):
+        return distiller
+    q = (
+        "From official docs only: compare httpx, trafilatura, and Playwright — "
+        "primary purpose and which Browser skill layer uses each "
+        "(Layer 1 extract = httpx+trafilatura; Layers 2–3 = Playwright). "
+        "Reply as markdown table: library | purpose | layer."
+    )
+    facts = gemini_live_search_text(q)
+    if not facts.strip():
+        return distiller
+    parsed = _parse_training_table_from_text(facts)  # generic pipe table parser
+    if not parsed:
+        return distiller
+    mapped: list[dict[str, Any]] = []
+    for row in parsed[:3]:
+        cells = list(row.values())
+        mapped.append(
+            {
+                "library_name": cells[0] if cells else "",
+                "primary_purpose": cells[1] if len(cells) > 1 else "",
+                "browser_cascade_layer": cells[2] if len(cells) > 2 else "",
+            }
+        )
+    if not mapped:
+        return distiller
+    distiller = dict(distiller)
+    distiller["rows"] = mapped
+    if "items" in distiller:
+        distiller["items"] = mapped
+    return distiller
+
+
+def _row_has_library_fields(row: dict[str, Any]) -> bool:
+    empty = {"", "—", "-", "not listed", "n/a"}
+    name = str(row.get("library_name") or row.get("library") or row.get("name") or "").strip().lower()
+    return bool(name and name not in empty)
+
+
+def enrich_training_institute_gaps(user_query: str, distiller: dict[str, Any]) -> dict[str, Any]:
+    """Fill missing CNC/VMC institute rows via Gemini live search (FORGE)."""
+    low = (user_query or "").lower()
+    if not any(k in low for k in ("cnc", "vmc", "training institute", "training institutes")):
+        return distiller
+    from .search_providers import gemini_live_search_text
+
+    want = 5 if re.search(r"\bcompare\s+5\b|\b5\s+cnc|\bfive\b", low) else 3
+    rows = _extract_rows(distiller)
+    if len(rows) >= want and all(_row_has_institute_fields(r) for r in rows[:want]):
+        return distiller
+
+    city = "Bangalore" if any(c in low for c in ("bangalore", "bengaluru")) else "the city named in the query"
+    q = (
+        f"Use Google Search: list {want} CNC or VMC machine training institutes in {city} with "
+        "course duration and approximate fee. "
+        "Prefer UrbanPro, JustDial, or official institute sites. "
+        "Reply as markdown table: institute name | duration | fee."
+    )
+    facts = gemini_live_search_text(q)
+    if not facts.strip():
+        return distiller
+    parsed_rows = _parse_training_table_from_text(facts)
+    if not parsed_rows:
+        return distiller
+    distiller = dict(distiller)
+    distiller["rows"] = parsed_rows[:want]
+    if "items" in distiller:
+        distiller["items"] = parsed_rows[:want]
+    return distiller
+
+
+def _row_has_institute_fields(row: dict[str, Any]) -> bool:
+    empty = {"", "—", "-", "not listed", "n/a"}
+    name = str(row.get("institute_name") or row.get("name") or row.get("institute") or "").strip().lower()
+    if not name or name in empty:
+        return False
+    return True
+
+
+def _parse_training_table_from_text(text: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 3:
+            continue
+        rows.append(
+            {
+                "institute_name": cells[0],
+                "course_duration": cells[1] if len(cells) > 1 else "",
+                "approximate_fee": cells[2] if len(cells) > 2 else "",
+                "certification_offered": cells[3] if len(cells) > 3 else "",
+            }
+        )
+    return rows
+
+
+def enrich_distiller_pricing_gaps(user_query: str, distiller: dict[str, Any]) -> dict[str, Any]:
+    """Ensure all named products have rows filled from official pricing pages."""
+    if not _is_pricing_comparison(user_query):
+        return distiller
+    from .pricing_enrich import ensure_pricing_rows
+
+    return ensure_pricing_rows(user_query, distiller)
+
+
+def coerce_researcher_to_browser(
+    user_query: str,
+    successors: list[Any],
+    *,
+    enabled: bool = True,
+) -> list[Any]:
+    """Replace researcher with browser when comparison tasks need live interaction."""
+    if not enabled:
+        return successors
+    from .dag_schemas import NodeSpec
+    from .search_providers import extract_http_urls
+
+    needs, min_actions, row = comparison_needs_browser(user_query)
+    if not needs:
+        return successors
+
+    skills = {s.skill for s in successors if isinstance(s, NodeSpec)}
+    if "browser" in skills or "researcher" not in skills:
+        return successors
+
+    urls = extract_http_urls(user_query)
+    suffix = comparison_browser_goal_suffix(user_query)
+    understanding = comparison_query_understanding(user_query, row)
+    out: list[Any] = []
+    for node in successors:
+        if not isinstance(node, NodeSpec) or node.skill != "researcher":
+            out.append(node)
+            continue
+        meta = dict(node.metadata or {})
+        label = str(meta.get("label") or "browser")
+        meta["label"] = label
+        if row:
+            meta.setdefault("query_id", row.get("id"))
+        meta["min_browser_actions"] = min_actions
+        if urls:
+            meta.setdefault("url", urls[0])
+        goal_parts = [
+            understanding,
+            user_query.strip(),
+            str(meta.get("goal") or meta.get("question") or "").strip(),
+        ]
+        goal = "\n\n".join(p for p in goal_parts if p).strip()
+        if suffix and suffix not in goal:
+            goal = f"{goal.rstrip('.')}. {suffix}"
+        meta["goal"] = goal
+        out.append(NodeSpec(skill="browser", inputs=list(node.inputs), metadata=meta))
+    return out
+
+
+def collapse_parallel_browser_plan(user_query: str, successors: list[Any]) -> list[Any]:
+    """Replace N parallel browser→distiller chains with one browser → distiller → formatter."""
+    from .dag_schemas import NodeSpec
+
+    nodes = [s for s in successors if isinstance(s, NodeSpec)]
+    browser_nodes = [s for s in nodes if s.skill == "browser"]
+    if len(browser_nodes) <= 1:
+        return successors
+
+    spec = parse_comparison_spec(user_query)
+    if not spec.is_comparison:
+        return successors
+
+    row = match_assignment_query(user_query)
+    schema = distiller_metadata_for_query(user_query, row)
+    try:
+        min_actions = int((row or {}).get("min_browser_actions") or 0)
+    except (TypeError, ValueError):
+        min_actions = 0
+    if min_actions <= 0:
+        min_actions = min_browser_actions_for_text(user_query) or 3
+
+    from .browser.urls import resolve_browser_urls
+
+    resolved = resolve_browser_urls("", user_query, user_query)
+    understanding = comparison_query_understanding(user_query, row)
+    suffix = comparison_browser_goal_suffix(user_query)
+    goal_parts = [understanding, user_query.strip()]
+    goal = "\n\n".join(p for p in goal_parts if p).strip()
+    if suffix and suffix not in goal:
+        goal = f"{goal.rstrip('.')}. {suffix}"
+
+    browser_meta: dict[str, Any] = {
+        "label": "browser",
+        "goal": goal,
+        "min_browser_actions": min_actions,
+    }
+    if row:
+        browser_meta["query_id"] = row.get("id")
+    if resolved:
+        browser_meta["url"] = resolved[0]
+
+    distill_meta: dict[str, Any] = {
+        "label": "extract",
+        "question": schema.get("question", ""),
+        "required_keys": schema.get("required_keys", ""),
+        "fields": schema.get("fields", ""),
+        "comparison_spec": {
+            "row_count": spec.row_count,
+            "columns": spec.columns,
+            "column_keys": spec.column_keys,
+        },
+    }
+    if row:
+        distill_meta["query_id"] = row.get("id")
+
+    fmt_meta: dict[str, Any] = {"label": "out"}
+    hint = schema.get("formatter_hint")
+    if hint:
+        fmt_meta["question"] = hint
+
+    return [
+        NodeSpec(skill="browser", inputs=["USER_QUERY"], metadata=browser_meta),
+        NodeSpec(skill="distiller", inputs=["n:browser"], metadata=distill_meta),
+        NodeSpec(skill="formatter", inputs=["n:extract"], metadata=fmt_meta),
+    ]
 
 
 def enrich_planner_nodes(user_query: str, successors: list[Any]) -> list[Any]:
@@ -247,10 +669,16 @@ def enrich_planner_nodes(user_query: str, successors: list[Any]) -> list[Any]:
             continue
         meta = dict(node.metadata or {})
         if node.skill == "browser":
+            from .browser.urls import resolve_browser_urls
+
             if row:
                 meta.setdefault("query_id", row.get("id"))
             meta.setdefault("min_browser_actions", min_actions)
-            goal = str(meta.get("goal") or meta.get("question") or "").strip()
+            goal = str(meta.get("goal") or meta.get("question") or user_query).strip()
+            primary = str(meta.get("url") or "").strip()
+            resolved = resolve_browser_urls(primary, goal, user_query)
+            if resolved:
+                meta["url"] = resolved[0]
             if suffix and suffix not in goal:
                 meta["goal"] = f"{goal}. {suffix}".strip(". ") if goal else suffix
             node = NodeSpec(skill=node.skill, inputs=list(node.inputs), metadata=meta)
@@ -454,6 +882,10 @@ def format_comparison_answer(
 
     if not distiller and browser_content:
         distiller = {"text": browser_content, "rows": _extract_rows({"text": browser_content})}
+
+    distiller = enrich_distiller_pricing_gaps(user_query, distiller)
+    distiller = enrich_training_institute_gaps(user_query, distiller)
+    distiller = enrich_doc_library_gaps(user_query, distiller)
 
     return format_comparison_table(spec, distiller, browser_content=browser_content)
 

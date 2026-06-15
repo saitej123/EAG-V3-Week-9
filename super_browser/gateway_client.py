@@ -9,7 +9,7 @@ import httpx
 import yaml
 from loguru import logger
 
-from .llm_env import gemini_models_ordered, shared_gemini_client
+from .llm_env import gemini_models_ordered, gemini_models_with_fallbacks, shared_gemini_client
 from .llm_retry import generate_content_with_retry, loads_json_lenient
 from .paths import ROOT
 
@@ -145,7 +145,7 @@ class SkillLLMClient:
         response_schema: type | None,
     ) -> str:
         client = shared_gemini_client()
-        models = gemini_models_ordered()
+        models = gemini_models_with_fallbacks()
         if client is None or not models:
             raise RuntimeError(
                 "Gemini not configured — set GEMINI_API_KEY in .env (gateway not required for DAG mode)"

@@ -14,6 +14,10 @@ Docs: [python-httpx.org](https://www.python-httpx.org/)
 
 Docs: [trafilatura.readthedocs.io](https://trafilatura.readthedocs.io/)
 
+**crawl4ai** — Async web crawler that loads pages in a headless browser and returns clean markdown. Used by the **Researcher** skill only (`fetch_url`, `fetch_urls`, and step 2 of the `web_search` pipeline: Tavily → crawl4ai → Gemini → DuckDuckGo). **Not** used in the Browser cascade — Browser Layer 1 uses httpx + trafilatura instead.
+
+Repo: [unclecode/crawl4ai](https://github.com/unclecode/crawl4ai)
+
 **Playwright** — A tool from Microsoft for controlling a real Chromium, Firefox, or WebKit browser from code. You write Python (or JavaScript or other languages); Playwright clicks buttons and types text in an actual browser. The Browser skill uses Playwright for Layers 2a, 2b, and 3.
 
 Docs: [playwright.dev/python](https://playwright.dev/python/)

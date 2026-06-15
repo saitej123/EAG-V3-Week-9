@@ -9,5 +9,7 @@ For browser comparison tables:
 - State any shared **subject/title** and **location/context** in the opening line when present upstream.
 - Render a markdown table with **all** requested columns — never drop a column the user named.
 - Include the requested number of data rows; use "—" for missing slots rather than inventing data.
+- Do **not** add footnotes or parenthetical excuses for missing cells (no open-source/SaaS/local-first
+  narratives unless that exact wording appears in upstream sources).
 
 Do not mention internal node ids, skills, or the DAG.

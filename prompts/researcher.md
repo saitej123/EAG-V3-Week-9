@@ -5,7 +5,7 @@ If USER_QUERY or metadata.question contains a full `http://` or `https://` URL, 
 call fetch_url again after the page loads). The orchestrator stops the tool loop after one
 successful fetch and passes the page text to distiller.
 
-Otherwise: one **web_search**, then **fetch_urls** on up to 3 result URLs (Tavily → crawl4ai → Gemini → DuckDuckGo).
+Otherwise: for **pricing/plan comparisons**, call **gemini_live_search** first (Google Search grounding), then **web_search**, then **fetch_urls** on official vendor pages (Tavily → crawl4ai → Gemini → DuckDuckGo pipeline for web_search).
 
 Respond with concise factual findings only — population figures, dates, quotes, or URLs used. No meta commentary.
 

@@ -68,22 +68,18 @@ def plan_recovery(
             note=error_text,
             failure_report={"node_id": failed_node_id, "skill": failed_skill, "error": error_text},
         )
-    if failed_skill == "browser" and (
-        "executable doesn't exist" in lower
-        or "playwright install" in lower
-        or "playwright chromium is not installed" in lower
-    ):
-        return RecoveryDecision(
-            action="skip",
-            reason="missing_dependency",
-            note=error_text,
-            failure_report={"node_id": failed_node_id, "skill": failed_skill, "error": error_text},
-        )
-    if failed_skill == "browser" and (
-        "cascade exhausted" in lower
-        or "browser cascade failed" in lower
-        or "all browser layers failed" in lower
-    ):
+    if failed_skill == "browser":
+        if (
+            "executable doesn't exist" in lower
+            or "playwright install" in lower
+            or "playwright chromium is not installed" in lower
+        ):
+            return RecoveryDecision(
+                action="skip",
+                reason="missing_dependency",
+                note=error_text,
+                failure_report={"node_id": failed_node_id, "skill": failed_skill, "error": error_text},
+            )
         return RecoveryDecision(
             action="skip",
             reason="browser_exhausted",
@@ -145,6 +141,17 @@ def recovery_planner_inputs(
     return inputs, reused
 
 
+def count_recovery_planners(graph: Graph) -> int:
+    """Count planner nodes inserted by critic/node failure recovery."""
+    count = 0
+    for _nid, data in graph.dg.nodes(data=True):
+        if data.get("skill") != "planner":
+            continue
+        if (data.get("metadata") or {}).get("recovery"):
+            count += 1
+    return count
+
+
 def handle_critic_verdict(
     critic_id: str,
     raw_output: str,
@@ -154,6 +161,7 @@ def handle_critic_verdict(
     critic_fail_cap_hit: list[str],
     *,
     fail_cap: int = 1,
+    max_recovery_planners: int = 1,
 ) -> bool:
     """Process critic fail/pass. Returns True when fail was handled (no graph extend)."""
     from .dag_schemas import CriticVerdict, NodeSpec, NodeState as NS, NodeStatus
@@ -170,16 +178,19 @@ def handle_critic_verdict(
     if not target and succs:
         target = succs[0]
 
-    for sid in succs:
-        if sid in states:
-            states[sid].status = NodeStatus.skipped
-
     count = graph.critic_fail_counts.get(target, 0) + 1
     graph.critic_fail_counts[target] = count
-    if count > fail_cap:
+    recovery_planner_count = count_recovery_planners(graph)
+    per_target_cap = count > fail_cap
+    global_recovery_cap = recovery_planner_count >= max_recovery_planners
+    if per_target_cap or global_recovery_cap:
         critic_fail_cap_hit.append(target or critic_id)
         recovered_branches[target] = True
         return True
+
+    for sid in succs:
+        if sid in states:
+            states[sid].status = NodeStatus.skipped
 
     c_label = graph.dg.nodes[critic_id].get("label", critic_id)
     recovery_inputs, _reused = recovery_planner_inputs(

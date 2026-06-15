@@ -26,7 +26,7 @@ cp .env.example .env   # GEMINI_API_KEY
 uv run python scripts/browser/seed_browser_sessions.py
 ```
 
-Open **http://127.0.0.1:8080/** — check **http://127.0.0.1:8080/health** shows `"status": "ok"` and `runtime_error: null`. If Chromium is missing, `./scripts/serve.sh` installs it automatically.
+Open **http://127.0.0.1:8080/** — the UI runs a **Playwright launch check** on load (amber banner if Chromium is missing). Check **http://127.0.0.1:8080/health** shows `"playwright_chromium": true`. Always start with `./scripts/serve.sh` (not bare `uvicorn`).
 
 | Action | Where |
 |--------|--------|
@@ -61,7 +61,7 @@ Cheapest correct path wins:
 | **Vision** | Canvas-only / adversarial UI (**B4**) |
 | **Blocked** | Live captcha wall — replan or report |
 
-Optional backends: [BrowserOS](https://github.com/browseros-ai/BrowserOS) (`BROWSER_BACKEND=browseros`) or [browser-use](https://github.com/browser-use/browser-use) (`BROWSER_USE_ENABLED=1`). See [`docs/BROWSER.md`](docs/BROWSER.md).
+Optional upstream: [browser-use](https://github.com/browser-use/browser-use) — `uv sync --extra browser-use` (runs before local Playwright cascade). See [`docs/BROWSER.md`](docs/BROWSER.md).
 
 ## Demo queries
 
@@ -69,11 +69,11 @@ Full catalog: `corpus/dag/ASSIGNMENT.json` · [`docs/BROWSER.md`](docs/BROWSER.m
 
 | Id | Comparison task |
 |----|-----------------|
-| **COMP** | Top 3 Hugging Face text-generation models by likes |
-| **DEAL** | 3 laptops under ₹80,000 (Flipkart) |
-| **TICKET** | 3 IMAX showtimes in Bengaluru (BookMyShow) |
-| **STACK** | 5 AI coding tools — free vs paid plans |
-| **FORGE** | 5 CNC/VMC training institutes in Bangalore |
+| **COMP** | Top 3 Hugging Face models by likes |
+| **DEAL** | 3 laptops under ₹80,000 |
+| **STACK** | 5 AI coding tools — free vs paid |
+| **FORGE** | 5 CNC/VMC training institutes — Bangalore |
+| **TICKET** | Bonus — GitHub trending repos |
 | **B1**–**B4** | Cascade lab (extract → deterministic → a11y → vision) |
 
 ## Replay
@@ -100,7 +100,7 @@ Orchestrator (`super_browser/flow.py`) is unchanged. Browser behaviour plugs in 
 ```
 User goal
     → Planner
-    → Researcher (optional — find candidate URLs)
+    → Researcher (optional — find candidate URLs; browser-failure fallback)
     → Browser skill
          Extract → Deterministic → A11y → Vision → Blocked
     → Distiller
@@ -108,6 +108,8 @@ User goal
     → Formatter (comparison table)
     → Replay viewer
 ```
+
+**crawl4ai** is Researcher-only (`fetch_url`, `fetch_urls`, `web_search` fallback). Browser uses **httpx + trafilatura + Playwright + Pillow** — see [`docs/BROWSER.md`](docs/BROWSER.md) and [`docs/VALIDATION.md`](docs/VALIDATION.md).
 
 | Piece | Location |
 |-------|----------|

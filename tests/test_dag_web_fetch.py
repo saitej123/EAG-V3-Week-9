@@ -39,6 +39,58 @@ def test_coerce_planner_leaves_researcher_plan():
     assert coerce_planner_successors(q, original) == original
 
 
+def test_coerce_planner_upgrades_researcher_for_comparison():
+    q = (
+        "Compare 3 trending open-source repositories on GitHub: go to https://github.com/trending, "
+        "open three repository pages. Return a comparison table "
+        "(repository name, star count, primary language)."
+    )
+    original = [
+        NodeSpec(skill="researcher", inputs=["USER_QUERY"], metadata={"label": "fetch"}),
+        NodeSpec(skill="distiller", inputs=["n:fetch"], metadata={"label": "extract"}),
+        NodeSpec(skill="formatter", inputs=["n:extract"], metadata={"label": "out"}),
+    ]
+    out = coerce_planner_successors(q, original)
+    assert out[0].skill == "browser"
+    assert out[0].metadata.get("min_browser_actions") == 3
+    assert out[0].metadata.get("url") == "https://github.com/trending"
+    assert out[1].skill == "distiller"
+    assert out[1].inputs == ["n:fetch"]
+
+
+def test_coerce_planner_formatter_only_comparison_uses_browser():
+    q = (
+        "Compare 3 trending repositories on GitHub: https://github.com/trending "
+        "Return a comparison table (repository name, star count, primary language)."
+    )
+    out = coerce_planner_successors(
+        q,
+        [NodeSpec(skill="formatter", inputs=["USER_QUERY"], metadata={"label": "out"})],
+    )
+    assert [s.skill for s in out] == ["browser", "distiller", "formatter"]
+    assert out[0].metadata.get("min_browser_actions") == 3
+
+
+def test_coerce_planner_collapses_parallel_stack_browsers():
+    q = (
+        "Compare 5 AI coding tools by free plan and paid plan: visit official pricing for "
+        "Cursor, GitHub Copilot, Codeium (Windsurf), Tabnine, and Continue.dev. "
+        "Return a table (tool, free tier summary, paid starting price)."
+    )
+    parallel = [
+        NodeSpec(skill="browser", inputs=["USER_QUERY"], metadata={"label": "b1", "url": "https://cursor.com/pricing"}),
+        NodeSpec(skill="browser", inputs=["USER_QUERY"], metadata={"label": "b2", "url": "https://github.com/features/copilot/plans"}),
+        NodeSpec(skill="browser", inputs=["USER_QUERY"], metadata={"label": "b3", "url": "https://windsurf.com/pricing"}),
+        NodeSpec(skill="distiller", inputs=["n:b1"], metadata={"label": "d1"}),
+        NodeSpec(skill="distiller", inputs=["n:b2"], metadata={"label": "d2"}),
+        NodeSpec(skill="formatter", inputs=["n:d1", "n:d2"], metadata={"label": "out"}),
+    ]
+    out = coerce_planner_successors(q, parallel)
+    assert [s.skill for s in out] == ["browser", "distiller", "formatter"]
+    assert out[0].metadata.get("query_id") == "STACK"
+    assert out[0].metadata.get("min_browser_actions") == 3
+
+
 def test_enrich_fetch_url_from_query_text():
     reg = SkillRegistry()
     skill = reg.get("researcher")

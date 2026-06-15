@@ -345,9 +345,47 @@ def _auto_tool_for_web_skill(
         return None
     if urls and "fetch_url" in skill.tools_allowed:
         return ToolCall(name="fetch_url", arguments={"url": urls[0]})
+
+    from .comparison_format import (
+        comparison_pricing_gemini_query,
+        parse_comparison_spec,
+        _is_pricing_comparison,
+    )
+
+    cmp = parse_comparison_spec(combined)
+    pricing_cmp = cmp.is_comparison and _is_pricing_comparison(combined)
+    if pricing_cmp and "gemini_live_search" in skill.tools_allowed:
+        q = comparison_pricing_gemini_query(f"{user_query}\n{sub_query}")
+        return ToolCall(name="gemini_live_search", arguments={"query": q[:500]})
+
+    if cmp.is_comparison and "web_search" in skill.tools_allowed:
+        from .browser.urls import resolve_browser_urls
+
+        resolved = resolve_browser_urls(urls[0] if urls else "", sub_query, user_query)
+        if resolved:
+            from urllib.parse import urlparse
+
+            hosts = " ".join(dict.fromkeys(urlparse(u).netloc for u in resolved if u))
+            q = f"{hosts} pricing free plan paid plan official".strip()
+        else:
+            q = (sub_query or user_query).strip()[:280]
+        return ToolCall(name="web_search", arguments={"query": q[:280], "max_results": 8})
+
     if "web_search" in skill.tools_allowed and any(
         k in combined.lower()
-        for k in ("population", "fetch", "http", "wikipedia", "current", "find ", "search")
+        for k in (
+            "population",
+            "fetch",
+            "http",
+            "wikipedia",
+            "current",
+            "find ",
+            "search",
+            "compare",
+            "pricing",
+            "plan",
+            "tier",
+        )
     ):
         q = (sub_query or user_query).strip()[:280]
         return ToolCall(name="web_search", arguments={"query": q, "max_results": 5})
@@ -476,7 +514,19 @@ async def run_skill(
 
         meta = graph_nodes[node_id].get("metadata") or {}
         sub_q = str(meta.get("question") or meta.get("goal") or query)
-        from .comparison_format import comparison_browser_goal_suffix, parse_comparison_spec
+        from .comparison_format import (
+            comparison_browser_goal_suffix,
+            comparison_query_understanding,
+            match_assignment_query,
+            parse_comparison_spec,
+        )
+
+        row = match_assignment_query(query)
+        understanding = comparison_query_understanding(query, row)
+        if understanding and understanding not in sub_q:
+            sub_q = f"{understanding}\n\n{sub_q}".strip()
+        if query.strip() and query.strip() not in sub_q:
+            sub_q = f"{query.strip()}\n\n{sub_q}".strip()
 
         cmp_spec = parse_comparison_spec(query)
         if cmp_spec.is_comparison:
@@ -528,6 +578,8 @@ async def run_skill(
                 force_path=force_path,
                 min_browser_actions=min_actions,
                 all_urls=targets,
+                session_id=ctx.session_id,
+                node_id=node_id,
             )
         except Exception as e:
             logger.error(f"[browser] skill dispatch error (contained): {e}")

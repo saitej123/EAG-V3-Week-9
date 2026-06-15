@@ -182,7 +182,7 @@ async def run_a11y_loop(page, goal: str, llm: Any) -> TurnResult | None:
                         output_tokens=output_tokens,
                     )
             try:
-                notes.append(await execute_action(page, action))
+                notes.append(await execute_action(page, action, turn=turn))
             except Exception as e:
                 notes.append(f"action_failed:{e}")
                 continue

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from super_browser.comparison_format import (
     comparison_browser_goal_suffix,
+    comparison_query_understanding,
     distiller_metadata_for_query,
     enrich_planner_nodes,
     format_comparison_answer,
@@ -12,6 +13,15 @@ from super_browser.comparison_format import (
     parse_comparison_spec,
 )
 from super_browser.dag_schemas import NodeSpec
+
+
+def test_comparison_query_understanding_includes_columns():
+    text = comparison_query_understanding(
+        "Compare 3 IMAX showtimes. Table with columns: movie name, theatre name, show time, ticket price"
+    )
+    assert "QUERY UNDERSTANDING" in text
+    assert "movie name" in text.lower()
+    assert "3" in text
 
 
 def test_parse_columns_from_parentheses():
@@ -155,7 +165,71 @@ def test_browser_goal_suffix_from_query_only():
 
 def test_match_assignment_query_still_works():
     row = match_assignment_query(
-        "Compare 3 IMAX showtimes in Bengaluru on BookMyShow: go to https://in.bookmyshow.com"
+        "Compare 3 trending open-source repositories on GitHub: go to https://github.com/trending"
     )
     assert row is not None
     assert row["id"] == "TICKET"
+
+
+def test_comparison_pricing_gemini_query_codeium_windsurf():
+    from super_browser.comparison_format import comparison_pricing_gemini_query
+
+    q = comparison_pricing_gemini_query(
+        "Compare Cursor, GitHub Copilot, and Codeium pricing pages for free vs paid plan"
+    )
+    assert "Windsurf" in q or "Codeium" in q
+    assert "FREE:" in q or "free tier" in q.lower()
+
+
+def test_parse_pricing_facts_structured():
+    from super_browser.comparison_format import _parse_pricing_facts
+
+    text = (
+        "FREE: Unlimited Tab completions; light agent quota\n"
+        "PAID: Pro $20/mo with frontier models"
+    )
+    parsed = _parse_pricing_facts(text)
+    assert "tab" in parsed["free_tier_summary"].lower()
+    assert "$20" in parsed["paid_starting_price"]
+
+
+def test_enrich_distiller_fills_codeium_gap(monkeypatch):
+    from super_browser.comparison_format import enrich_distiller_pricing_gaps
+
+    monkeypatch.setattr(
+        "super_browser.pricing_enrich.fetch_all_products",
+        lambda products: {
+            p: (
+                {
+                    "tool": "Codeium (Windsurf)",
+                    "free_tier_summary": "Free ($0/mo — light agent quota)",
+                    "paid_starting_price": "$20/mo (Pro)",
+                }
+                if "codeium" in p.lower() or "windsurf" in p.lower()
+                else {
+                    "tool": p,
+                    "free_tier_summary": "Free tier",
+                    "paid_starting_price": "$10/mo",
+                }
+            )
+            for p in products
+        },
+    )
+    distiller = {
+        "rows": [
+            {
+                "tool": "Cursor",
+                "free_tier_summary": "Hobby free",
+                "paid_starting_price": "$20/mo",
+            },
+            {"tool": "Codeium", "free_tier_summary": "—", "paid_starting_price": "—"},
+        ]
+    }
+    query = (
+        "Compare Cursor, GitHub Copilot, and Codeium by free vs paid plan: "
+        "visit official pricing pages for Cursor, GitHub Copilot, and Codeium."
+    )
+    out = enrich_distiller_pricing_gaps(query, distiller)
+    codeium = next(r for r in out["rows"] if "codeium" in str(r.get("tool", "")).lower())
+    assert "$20" in str(codeium.get("paid_starting_price", ""))
+    assert codeium.get("free_tier_summary") and codeium["free_tier_summary"] != "—"

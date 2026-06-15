@@ -137,7 +137,7 @@
         }
         .pipeline-strip {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 0.35rem;
         }
         .pipeline-step {
@@ -1597,6 +1597,32 @@
             cursor: pointer;
         }
         .browser-replay-toolbar button:hover { background: #e4e4e7; }
+        .browser-replay-shots {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+        }
+        .browser-replay-shot {
+            border: 1px solid #e4e4e7;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            background: #fff;
+        }
+        .browser-replay-shot img {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-height: 180px;
+            object-fit: cover;
+            background: #f4f4f5;
+        }
+        .browser-replay-shot figcaption {
+            padding: 0.35rem 0.5rem;
+            font-size: 0.65rem;
+            line-height: 1.3;
+            color: #52525b;
+        }
         #dagGraphMemoryList {
             font-size: 0.625rem;
             line-height: 1.4;
@@ -1698,13 +1724,13 @@
                         <p class="brand-subtitle">Browser cascade · replay · comparison</p>
                     </div>
                 </div>
-                <p class="mt-3 text-xs leading-relaxed text-zinc-500">Four-layer browser cascade (extract → deterministic → a11y → vision), comparison tasks, and seeded replay sessions.</p>
+                <p class="mt-3 text-xs leading-relaxed text-zinc-500">Playwright cascade (render → agent → deterministic → a11y → vision), comparison tasks, and seeded replay sessions.</p>
             </div>
 
             <div id="sidebarTablist" class="flex flex-col divide-y divide-zinc-200 border-b border-zinc-200" role="tablist" aria-label="Sidebar sections">
                 <button type="button" id="sidebarTabChatBtn" role="tab" aria-selected="true" aria-controls="panelOverview" class="sidebar-tab-btn tab-trigger border-l-zinc-900 bg-zinc-50 px-3 py-3 text-xs font-medium leading-snug text-zinc-900 transition hover:bg-zinc-50 sm:text-[13px]">
                     <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 9.75h.008v.008H8.625V9.75Zm0 3h.008v.008H8.625v-.008Zm0 3h.008v.008H8.625v-.008Zm3-6h.008v.008h-.008V9.75Zm0 3h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Zm3-6h.008v.008H15.75V9.75Zm0 3h.008v.008H15.75v-.008Zm0 3h.008v.008H15.75v-.008ZM4.5 6.75A2.25 2.25 0 0 1 6.75 4.5h10.5A2.25 2.25 0 0 1 19.5 6.75v10.5A2.25 2.25 0 0 1 17.25 19.5H6.75A2.25 2.25 0 0 1 4.5 17.25V6.75Z"/></svg>
-                    Chat
+                    <span>Overview</span>
                 </button>
                 <button type="button" id="sidebarTabTasksBtn" role="tab" aria-selected="false" aria-controls="panelTasks" class="sidebar-tab-btn tab-trigger flex flex-wrap items-center gap-x-2 gap-y-1 border-l-transparent px-3 py-3 text-xs font-semibold leading-snug text-slate-500 transition hover:bg-slate-50/80 hover:text-slate-700 sm:text-[13px]">
                     <svg class="tab-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.75" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
@@ -1729,8 +1755,8 @@
                 <div class="rounded-lg border border-zinc-200 bg-zinc-50/80 p-3.5">
                     <h3 class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Browser cascade</h3>
                     <div class="pipeline-strip mt-2.5" id="pipelineStrip" aria-hidden="true">
-                        <div class="pipeline-step active"><span>1</span>Extract</div>
-                        <div class="pipeline-step"><span>2</span>Deterministic</div>
+                        <div class="pipeline-step active"><span>1</span>Render</div>
+                        <div class="pipeline-step"><span>2</span>Agent</div>
                         <div class="pipeline-step"><span>3</span>A11y</div>
                         <div class="pipeline-step"><span>4</span>Vision</div>
                         <div class="pipeline-step"><span>5</span>Blocked</div>
@@ -1750,7 +1776,7 @@
             </div>
 
             <div id="panelTasks" role="tabpanel" aria-labelledby="sidebarTabTasksBtn" class="hidden p-4 flex flex-col gap-2 min-h-0">
-                <p class="text-xs leading-snug text-slate-500 shrink-0">Run <strong>COMP</strong>, scavenger hunts <strong>DEAL</strong> / <strong>TICKET</strong>, dossiers <strong>STACK</strong> / <strong>FORGE</strong>, or cascade demos <strong>B1–B4</strong>. Comparison tasks need ≥3 browser actions — not search snippets alone.</p>
+                <p class="text-xs leading-snug text-slate-500 shrink-0">Course picks: <strong>COMP</strong> (HF models), <strong>DEAL</strong> (laptops), <strong>STACK</strong> (5 AI tools), <strong>FORGE</strong> (CNC Bangalore). Bonus <strong>TICKET</strong>; cascade lab <strong>B1–B4</strong>. ≥3 browser actions required.</p>
                 <div id="dagQueriesScroll" class="dag-queries-scroll scrollbar-thin flex flex-col gap-1 min-h-0 flex-1" tabindex="0" aria-label="Browser task list">
                     <div id="testCaseList" class="flex flex-col shrink-0">
                         <p class="text-xs text-slate-400 py-4 text-center">Loading browser tasks…</p>
@@ -1788,6 +1814,11 @@
                     <button type="button" id="toggleTraceBtn" class="btn-shadcn btn-shadcn-outline text-xs">Show trace</button>
                     <button type="button" id="clearChatBtn" class="btn-shadcn btn-shadcn-ghost text-xs hidden sm:inline-flex">Clear chat</button>
                 </div>
+            </div>
+
+            <div id="runtimeHealthBanner" class="hidden mx-4 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" role="alert">
+                <span id="runtimeHealthBannerText"></span>
+                <button type="button" id="runtimeHealthRetryBtn" class="ml-2 underline font-semibold">Retry Playwright check</button>
             </div>
 
             <div id="chatMessages" class="chat-messages scrollbar-thin" role="log" aria-live="polite" aria-relevant="additions">
@@ -1886,7 +1917,7 @@
                     </div>
                     <div class="dag-graph-aside-section scroll">
                         <h3>Memory hits (session start)</h3>
-                        <div id="dagGraphMemoryList">No FAISS hits for this query (or not snapshotted yet).</div>
+                        <div id="dagGraphMemoryList">No memory hits snapshotted for this session yet.</div>
                     </div>
                 </aside>
             </div>
@@ -2098,12 +2129,16 @@
     let lastRenderedResult = '';
 
     let stopAgentInFlight = false;
+    let serverHealthOk = true;
 
     function syncComposerControls() {
         const running = agentRunActive || serverAgentBusy;
         if (runBtn) {
-            runBtn.disabled = running || indexJobActive;
+            runBtn.disabled = running || indexJobActive || !serverHealthOk;
             runBtn.hidden = running;
+            runBtn.title = !serverHealthOk
+                ? 'Playwright Chromium is not ready — see the warning banner above'
+                : '';
         }
         if (stopAgentBtn) {
             stopAgentBtn.hidden = !running;
@@ -2136,7 +2171,7 @@
             else if (dagRunMode === 'new_run') agentStatusLabel.textContent = 'New run…';
             else agentStatusLabel.textContent = 'Running…';
         } else {
-            agentStatusLabel.textContent = 'Ready';
+            agentStatusLabel.textContent = serverHealthOk ? 'Ready' : 'Browser blocked';
         }
         syncDagRunModeUI();
         syncDagResumeButton();
@@ -2242,6 +2277,7 @@
             clearAgentRunWatchdog();
             syncComposerControls();
             setAgentStatus(false);
+            closeStreamPanelSmooth();
         }
         if (dagGraphCtrl && dagGraphCtrl._lastSession !== activeDagSessionId) {
             dagGraphCtrl._didInitialFit = false;
@@ -2896,7 +2932,7 @@
             const hits = payload.memory_hits || [];
             if (!hits.length) {
                 dagGraphMemoryList.textContent =
-                    'No FAISS hits snapshotted for this session (runs before persistence may be empty).';
+                    'No memory hits snapshotted for this session yet.';
             } else {
                 dagGraphMemoryList.innerHTML = hits
                     .map(function (h, i) {
@@ -3014,6 +3050,22 @@
                     '<p><span class="browser-replay-path">' +
                     dagEscapeHtml(String(sec.body || sec.badge)) +
                     '</span></p>';
+            } else if (sec.n === 5 && sec.screenshots && sec.screenshots.length) {
+                html += '<pre>' + dagEscapeHtml(String(sec.body || '')) + '</pre>';
+                html += '<div class="browser-replay-shots">';
+                sec.screenshots.forEach(function (shot) {
+                    html +=
+                        '<figure class="browser-replay-shot">' +
+                        '<img src="' +
+                        dagEscapeHtml(shot.url || '') +
+                        '" alt="' +
+                        dagEscapeHtml(shot.caption || 'screenshot') +
+                        '" loading="lazy" />' +
+                        '<figcaption>' +
+                        dagEscapeHtml(shot.caption || '') +
+                        '</figcaption></figure>';
+                });
+                html += '</div>';
             } else {
                 html += '<pre>' + dagEscapeHtml(String(sec.body || '')) + '</pre>';
             }
@@ -3072,8 +3124,12 @@
         if (skill !== 'browser' || !nodeId) {
             if (selectedDagNodeId && skill !== 'browser') {
                 /* keep session replay visible if opened via toolbar */
-            } else if (!dagGraphReplayBtn || !dagBrowserReplaySection.dataset.pinned) {
-                dagBrowserReplaySection.hidden = true;
+            } else if (
+                !dagBrowserReplaySection ||
+                !dagGraphReplayBtn ||
+                !dagBrowserReplaySection.dataset.pinned
+            ) {
+                if (dagBrowserReplaySection) dagBrowserReplaySection.hidden = true;
                 if (dagBrowserReplay) dagBrowserReplay.innerHTML = '';
             }
             return;
@@ -3344,6 +3400,27 @@
         }
     }
 
+    function applyActiveSessionId(sid, labelSuffix) {
+        if (!sid) return;
+        activeDagSessionId = String(sid);
+        if (dagGraphSidebarMeta) {
+            dagGraphSidebarMeta.textContent =
+                'Session: ' + activeDagSessionId + (labelSuffix ? ' · ' + labelSuffix : '');
+        }
+        if (dagGraphSessionSelect) {
+            const hasOpt = Array.from(dagGraphSessionSelect.options).some(function (o) {
+                return o.value === activeDagSessionId;
+            });
+            if (!hasOpt) {
+                const opt = document.createElement('option');
+                opt.value = activeDagSessionId;
+                opt.textContent = activeDagSessionId.slice(0, 16) + '… (live)';
+                dagGraphSessionSelect.insertBefore(opt, dagGraphSessionSelect.firstChild);
+            }
+            dagGraphSessionSelect.value = activeDagSessionId;
+        }
+    }
+
     function consumeUiSessionPayload(payload) {
         const plain = stripAnsi(payload);
         const marker = '[UI_SESSION_JSON]';
@@ -3355,22 +3432,7 @@
         try {
             const data = JSON.parse(jsonText);
             if (data && data.session_id) {
-                activeDagSessionId = String(data.session_id);
-                if (dagGraphSidebarMeta) {
-                    dagGraphSidebarMeta.textContent = 'Session: ' + activeDagSessionId;
-                }
-                if (dagGraphSessionSelect) {
-                    const hasOpt = Array.from(dagGraphSessionSelect.options).some(function (o) {
-                        return o.value === activeDagSessionId;
-                    });
-                    if (!hasOpt) {
-                        const opt = document.createElement('option');
-                        opt.value = activeDagSessionId;
-                        opt.textContent = activeDagSessionId.slice(0, 16) + '… (live)';
-                        dagGraphSessionSelect.insertBefore(opt, dagGraphSessionSelect.firstChild);
-                    }
-                    dagGraphSessionSelect.value = activeDagSessionId;
-                }
+                applyActiveSessionId(data.session_id);
                 void loadDagSessions(activeDagSessionId).then(function () {
                     return refreshDagGraph(activeDagSessionId, { live: true, force: true });
                 }).catch(function (err) {
@@ -3663,13 +3725,15 @@
         if (!strip) return;
         const steps = strip.querySelectorAll('.pipeline-step');
         steps.forEach(function (s) { s.classList.remove('active'); });
-        if (/\[browser\].*path=vision|\[browser\].*vision returned/.test(msg)) {
+        if (/\[browser\].*gateway_blocked|path=gateway_blocked/.test(msg)) {
+            steps[4]?.classList.add('active');
+        } else if (/\[browser\].*path=vision|\[browser\].*vision returned|playwright_vlm|vlm_live:/.test(msg)) {
             steps[3]?.classList.add('active');
         } else if (/\[browser\].*path=a11y|\[browser\].*a11y turn/.test(msg)) {
             steps[2]?.classList.add('active');
-        } else if (/\[browser\].*path=deterministic/.test(msg)) {
+        } else if (/\[browser\].*path=deterministic|\[browser\].*path=agent|\[browser\].*click_/.test(msg)) {
             steps[1]?.classList.add('active');
-        } else if (/\[browser\].*path=extract|\[browser\] cascade start/.test(msg)) {
+        } else if (/\[browser\].*path=extract|\[browser\] cascade start|render:playwright/.test(msg)) {
             steps[0]?.classList.add('active');
         } else if (/\[dag\].*\(formatter\)|RUN_COMPLETE|\[browser\].*path=/.test(msg)) {
             steps[3]?.classList.add('active');
@@ -3929,6 +3993,13 @@
             setFormHint('Agent is already running — wait for the current run to finish.');
             return;
         }
+        if (!serverHealthOk) {
+            await checkServerHealth(true);
+            if (!serverHealthOk) {
+                setFormHint('Playwright Chromium is not ready — fix the banner above, then Retry.');
+                return;
+            }
+        }
         if (indexJobActive) {
             setFormHint('Indexing is in progress — wait for it to finish before sending.');
             appendLog('[UI] Cannot start agent while indexing is in progress.');
@@ -3954,6 +4025,7 @@
         if (dagGraphAutoRefresh && dagGraphAutoRefresh.checked) startDagGraphPolling();
 
         const payload = { query: query };
+        const launchedQueryId = pendingDagQueryId;
         if (pendingDagQueryId) {
             payload.query_id = pendingDagQueryId;
             lastLaunchedQueryId = pendingDagQueryId;
@@ -3969,23 +4041,34 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
+            let startBody = {};
+            try {
+                startBody = await res.json();
+            } catch (parseErr) {
+                startBody = {};
+            }
             if (!res.ok) {
                 let msg = 'HTTP ' + res.status + ' ' + res.statusText;
                 if (res.status === 429) {
-                    try {
-                        const body = await res.json();
-                        if (body && body.detail) msg = String(body.detail);
-                    } catch (err) { /* ignore */ }
+                    if (startBody && startBody.detail) msg = String(startBody.detail);
                     appendLog('[UI] Busy — ' + msg);
                     appendChatMessage('assistant', msg, { system: true });
                 } else {
+                    if (startBody && startBody.detail) msg = String(startBody.detail);
                     appendLog('Error starting agent: ' + msg);
                     appendChatMessage('assistant', 'Could not start the agent: ' + msg, { system: true });
                 }
                 queryInput.value = query;
                 autoResizeTextarea(queryInput);
+                pendingDagQueryId = launchedQueryId;
                 resetRunButton();
                 return;
+            }
+            if (startBody.session_id) {
+                applyActiveSessionId(startBody.session_id, 'starting');
+                void refreshDagGraph(startBody.session_id, { live: true, force: true }).catch(function () {
+                    /* SSE may refresh again */
+                });
             }
             startAgentRunWatchdog();
             if (dagGraphAutoRefresh && dagGraphAutoRefresh.checked) startDagGraphPolling();
@@ -3994,6 +4077,7 @@
             appendChatMessage('assistant', 'Network error — could not reach the server.', { system: true });
             queryInput.value = query;
             autoResizeTextarea(queryInput);
+            pendingDagQueryId = launchedQueryId;
             resetRunButton();
         }
     }
@@ -4024,7 +4108,7 @@
     // DAG demo queries: load query and auto-run
     document.addEventListener('click', function (e) {
         const btn = e.target.closest(
-            '#chatWelcomeChips .demo-welcome-chip, #dagQueriesScroll .test-case-btn, #panelTestCases .test-case-btn, #panelRag .rag-query-card, #panelRag .test-case-btn'
+            '#chatWelcomeChips .demo-welcome-chip, #dagQueriesScroll .test-case-btn'
         );
         if (!btn) return;
         const query = btn.getAttribute('data-query');
@@ -4194,6 +4278,9 @@
 
     function dagQueryMetaLabel(q) {
         const bound = q.wall_clock_sec ? q.wall_clock_sec + 's bound' : '';
+        if (q.course_example) {
+            return bound ? 'Course · ' + bound : 'Course example';
+        }
         if (q.id === 'COMP') {
             return bound ? 'Comparison · ' + bound : 'Comparison';
         }
@@ -4601,10 +4688,10 @@
     }
 
     const WELCOME_DEMO_IDS = [
-        { id: 'COMP', chipClass: 'browser-welcome-chip', label: 'COMP · HF leaderboard' },
-        { id: 'DEAL', chipClass: 'browser-welcome-chip', label: 'DEAL · laptop hunt' },
-        { id: 'TICKET', chipClass: 'browser-welcome-chip', label: 'TICKET · IMAX' },
-        { id: 'STACK', chipClass: 'browser-welcome-chip', label: 'STACK · AI pricing' },
+        { id: 'COMP', chipClass: 'browser-welcome-chip', label: 'COMP · HF models' },
+        { id: 'DEAL', chipClass: 'browser-welcome-chip', label: 'DEAL · laptops' },
+        { id: 'STACK', chipClass: 'browser-welcome-chip', label: 'STACK · 5 AI tools' },
+        { id: 'FORGE', chipClass: 'browser-welcome-chip', label: 'FORGE · CNC Bangalore' },
     ];
 
     function renderWelcomeDemoChips(queriesById) {
@@ -4667,7 +4754,64 @@
         }
     }
 
+    async function checkServerHealth(probeLaunch) {
+        const banner = document.getElementById('runtimeHealthBanner');
+        const bannerText = document.getElementById('runtimeHealthBannerText');
+        if (!banner || !bannerText) return false;
+        try {
+            const url = probeLaunch
+                ? '/api/browser/playwright-status?probe=1'
+                : '/health';
+            const res = await fetch(url, { cache: 'no-store' });
+            const body = await res.json().catch(function () {
+                return {};
+            });
+            const pwOk =
+                body.playwright_chromium === true ||
+                body.ready === true ||
+                (body.status === 'success' && body.ready !== false) ||
+                (body.status === 'ok' && !body.runtime_error);
+            const err =
+                body.runtime_error ||
+                body.playwright_error ||
+                body.detail ||
+                (pwOk ? '' : 'Playwright Chromium is not ready');
+            serverHealthOk = !!pwOk && !body.runtime_error;
+            if (!serverHealthOk && err) {
+                bannerText.textContent =
+                    String(err) +
+                    ' — run ./scripts/serve.sh (installs Chromium) or set BROWSER_IGNORE_PROXY=1 if you see tunnel errors.';
+                banner.classList.remove('hidden');
+            } else if (body.runtime_error) {
+                bannerText.textContent = String(body.runtime_error);
+                serverHealthOk = false;
+                banner.classList.remove('hidden');
+            } else {
+                bannerText.textContent = '';
+                serverHealthOk = true;
+                banner.classList.add('hidden');
+            }
+            syncComposerControls();
+            setAgentStatus(agentRunActive || serverAgentBusy);
+            return serverHealthOk;
+        } catch (err) {
+            serverHealthOk = false;
+            bannerText.textContent = 'Cannot reach server — start with ./scripts/serve.sh';
+            banner.classList.remove('hidden');
+            syncComposerControls();
+            return false;
+        }
+    }
+
+    const runtimeHealthRetryBtn = document.getElementById('runtimeHealthRetryBtn');
+    if (runtimeHealthRetryBtn) {
+        runtimeHealthRetryBtn.addEventListener('click', function () {
+            void checkServerHealth(true);
+        });
+    }
+
     loadBrowserQueries();
+    checkServerHealth(true);
 })();
 </script>
 </body>

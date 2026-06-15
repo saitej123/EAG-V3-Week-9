@@ -1,8 +1,14 @@
 {
-  "description": "Browser comparison agent — web_search and fetch_url cannot reliably handle JS-rendered pages, filters, dropdowns, tabs, forms, or multi-step flows. Use the browser skill for interactive comparison tasks (≥3 visible actions) plus an 8-section replay report.",
+  "description": "Browser comparison agent — web_search and fetch_url are useful for static pages, but they fail on JavaScript-rendered pages, click-revealed widgets, multi-page flows, and sites where useful data appears only after filtering or sorting. Students pick one comparison task (≥3 visible browser actions, not search snippets) plus an 8-section replay report. Orchestrator unchanged — browser plugs in via skill catalogue only.",
   "session_root": "state/sessions",
   "log_dir": "logs/dag",
   "worked_query_ids": ["COMP"],
+  "course_examples": [
+    "Compare 3 laptops under ₹80,000",
+    "Compare 5 AI coding tools by free plan and paid plan",
+    "Compare top 3 Hugging Face text-generation models sorted by likes",
+    "Compare 5 CNC/VMC training institutes in Bangalore"
+  ],
   "submission_outline": [
     {
       "part": 1,
@@ -20,7 +26,7 @@
     {
       "part": 1,
       "title": "Cross-site dossiers",
-      "summary": "Hop across official sites — pricing tabs, institute listings, multi-step flows.",
+      "summary": "Course-style comparisons — AI pricing (STACK) and training listings (FORGE).",
       "query_ids": ["STACK", "FORGE"]
     },
     {
@@ -37,22 +43,22 @@
       "title": "Browser comparison agent + replay viewer",
       "query_id": "COMP",
       "requirements": [
-        "web_search/fetch_url fail on JS-rendered pages, click-revealed widgets, filters, and multi-step flows — use browser.",
-        "Complete a real comparison on the live web — filters, dropdowns, sort, tabs, forms, or multi-step flows.",
-        "At least three visible browser actions — not passive search snippets.",
-        "Structured comparison table plus 8-section replay: goal, DAG, path, actions, page logs, data, table, cost.",
-        "Orchestrator unchanged — browser skill plugs in via skill catalogue only."
+        "web_search/fetch_url fail on JS-rendered pages, click-revealed widgets, multi-page flows, and post-filter/sort data — use browser.",
+        "Pick one comparison task: 3 laptops under ₹80,000 (DEAL), 5 AI coding tools free vs paid (STACK), top 3 HF models by likes (COMP), or 5 CNC/VMC institutes Bangalore (FORGE).",
+        "At least three visible browser actions — search, filter, sort, open detail pages, tabs, expand hidden content, or submit a form. Not passive search snippets.",
+        "Structured comparison table plus 8-section replay: goal, DAG, path (extract/deterministic/a11y/vision/blocked), actions, screenshots/logs, data, table, cost.",
+        "Orchestrator unchanged — new behaviour via skill catalogue or Browser skill extension only."
       ],
       "verify": "Run COMP from Tasks; Graph & Replay → Replay report. Or Open COMP replay demo.",
       "layer_demos": ["B1", "B2", "B3", "B4"],
-      "creative_comparisons": ["DEAL", "TICKET", "STACK", "FORGE"]
+      "creative_comparisons": ["DEAL", "STACK", "FORGE"]
     }
   ],
   "browser_findings": {
     "canvas_heavy_a11y_wins": "Six real canvas-heavy targets predicted to need vision all resolved on a11y via the natural cascade.",
     "vision_only_on_adversarial_fixture": "Vision path required only for B4 (canvas-only.html), built to defeat a11y.",
     "architecture": "User goal → planner → researcher (optional URL discovery) → browser (extract → deterministic → a11y → vision → blocked) → distiller → critic → formatter → replay viewer. Gateway blocked → recover or report.",
-    "creative_patterns": "DEAL/TICKET stress filters on one site; STACK/FORGE stress multi-site pricing or institute listings with hidden detail pages."
+    "creative_patterns": "DEAL/COMP stress filter+sort+open flows; STACK/FORGE stress multi-row tables (pricing or training listings). TICKET is an optional bonus."
   },
   "browser_reference_runs": [
     {"layer": "1", "target": "news.ycombinator.com", "path": "extract", "turns": 0, "cost_usd": 0.0, "wall_clock_sec": 2.1, "query_id": "B1"},
@@ -67,13 +73,14 @@
       "label": "COMP",
       "title": "Hugging Face likes leaderboard",
       "featured": "browser_design",
-      "query": "Compare the top 3 Hugging Face text-generation models: go to https://huggingface.co/models, filter by text-generation, filter by transformers, sort by most likes, open the top three model cards, and return a structured comparison table (model name, likes, one-line description). Use the browser skill with at least three visible actions (filter, sort, open cards). Do not use search snippets only.",
+      "query": "Compare the top 3 Hugging Face text-generation models sorted by likes: go to https://huggingface.co/models, filter text-generation and transformers, sort by most likes, open the top three model cards, return a table (model, likes, one-line description). At least three browser actions (filter, sort, open cards). Do not use search snippets only.",
       "wall_clock_sec": 180,
       "expected_nodes_min": 4,
       "expected_skills": ["planner", "browser", "distiller", "formatter"],
       "expected_auto": ["critic"],
       "expected_flow": "planner → browser → distiller → critic → formatter",
       "min_browser_actions": 3,
+      "course_example": true,
       "ui_hint": "Primary demo — dropdown filters + sort + model cards.",
       "verify_hint": "Path likely a11y; replay shows ≥3 actions + comparison table."
     },
@@ -83,13 +90,14 @@
       "label": "DEAL",
       "title": "Midnight laptop hunt — Flipkart",
       "featured": "browser_creative",
-      "query": "Compare 3 laptops under ₹80,000 on Flipkart: go to https://www.flipkart.com, search for laptop, apply a price filter up to ₹80,000, sort by customer rating, open three product detail pages, and return a comparison table (name, price, CPU/RAM highlight, rating). Use the browser skill with at least three visible actions (search, filter or sort, open product pages). Do not use search snippets only.",
+      "query": "Compare 3 laptops under ₹80,000 on Flipkart: go to https://www.flipkart.com, search laptop, filter price up to ₹80,000, sort by rating, open three product pages, return a table (name, price, CPU/RAM, rating). At least three browser actions (search, filter or sort, open pages). Do not use search snippets only.",
       "wall_clock_sec": 180,
       "expected_nodes_min": 4,
       "expected_skills": ["planner", "browser", "distiller", "formatter"],
       "expected_auto": ["critic"],
       "expected_flow": "planner → browser → distiller → critic → formatter",
       "min_browser_actions": 3,
+      "course_example": true,
       "ui_hint": "E-commerce maze — search box, price facet, product cards.",
       "verify_hint": "Table with price + spec; replay logs filter/sort clicks."
     },
@@ -97,49 +105,51 @@
       "id": "TICKET",
       "part": 1,
       "label": "TICKET",
-      "title": "IMAX showdown — BookMyShow",
+      "title": "Trending repos — GitHub",
       "featured": "browser_creative",
-      "query": "Compare 3 IMAX showtimes in Bengaluru on BookMyShow: go to https://in.bookmyshow.com, set city to Bengaluru, search for a currently running blockbuster film, narrow to IMAX or premium large-format showtimes if the site offers that filter, and open three different theatre showtime pages. Return a comparison table with columns: movie name, theatre name, show time, ticket price, screen format (exactly three distinct theatres). At least three visible browser actions (city/search, format filter or sort, open showtimes). Do not use search snippets only.",
-      "wall_clock_sec": 200,
+      "query": "Compare 3 trending open-source repositories on GitHub: go to https://github.com/trending, optionally pick a language from the sidebar, open three repository pages from the trending list, and return a comparison table with columns: repository name, star count, primary language. Use the browser skill with at least three visible actions (scroll or filter, open repo pages). Do not use search snippets only.",
+      "wall_clock_sec": 120,
       "expected_nodes_min": 4,
       "expected_skills": ["planner", "browser", "distiller", "formatter"],
       "expected_auto": ["critic"],
       "expected_flow": "planner → browser → distiller → critic → formatter",
       "min_browser_actions": 3,
-      "ui_hint": "Ticketing UI — city picker, movie search, showtime grid.",
-      "verify_hint": "Three theatres or slots with price; multi-click navigation in replay."
+      "ui_hint": "Simple list UI — trending feed, language filter, repo detail pages.",
+      "verify_hint": "Three repos with stars and language; replay logs open-repo clicks."
     },
     {
       "id": "STACK",
       "part": 1,
       "label": "STACK",
-      "title": "AI copilot price wars",
+      "title": "5 AI coding tools — free vs paid",
       "featured": "browser_creative",
-      "query": "Compare 5 AI coding assistants by free plan vs paid plan: use the browser to visit official pricing pages for Cursor, GitHub Copilot, Codeium, Tabnine, and Continue.dev. On each site, open the pricing page and expand tiers or switch billing tabs as needed. Return a structured comparison table (tool, free tier summary, paid starting price). At least three visible browser actions across the sites. Do not use search snippets only.",
-      "wall_clock_sec": 240,
+      "query": "Compare 5 AI coding tools by free plan and paid plan: visit official pricing for Cursor, GitHub Copilot, Codeium (Windsurf), Tabnine, and Continue.dev. Return a table (tool, free tier summary, paid starting price). At least three browser actions across the sites. Use only text from each vendor's official pricing page — put — if not listed. Do not invent model names or prices.",
+      "wall_clock_sec": 150,
       "expected_nodes_min": 4,
       "expected_skills": ["planner", "browser", "distiller", "formatter"],
       "expected_auto": ["critic"],
       "expected_flow": "planner → browser → distiller → critic → formatter",
       "min_browser_actions": 3,
-      "ui_hint": "Cross-site dossier — pricing tabs, accordions, tier toggles.",
-      "verify_hint": "Multi-page flow; free vs paid columns in final table."
+      "course_example": true,
+      "ui_hint": "Five pricing pages — browser opens up to five URLs; formatter fills any gaps from live official pages.",
+      "verify_hint": "Five tools with free vs paid columns; replay logs ≥3 actions."
     },
     {
       "id": "FORGE",
       "part": 1,
       "label": "FORGE",
-      "title": "CNC/VMC craft schools — Bangalore",
+      "title": "CNC/VMC training — Bangalore",
       "featured": "browser_creative",
-      "query": "Compare 5 CNC/VMC training institutes in Bangalore: use the browser to open a training institute directory or course listings site, search for CNC or VMC programs in Bangalore, apply a city or location filter, open five institute or course detail pages, and return a comparison table (institute name, course duration, approximate fee, certification offered). At least three visible browser actions (search, filter, open detail pages). Do not use search snippets only.",
-      "wall_clock_sec": 240,
+      "query": "Compare 5 CNC/VMC training institutes in Bangalore: go to https://www.urbanpro.com/bangalore/cnc-programming-training, use search or filters, open five institute listings, return a table (institute, course duration, approximate fee). At least three browser actions (search, filter, or open listings). Do not use google.com.",
+      "wall_clock_sec": 120,
       "expected_nodes_min": 4,
       "expected_skills": ["planner", "browser", "distiller", "formatter"],
       "expected_auto": ["critic"],
       "expected_flow": "planner → browser → distiller → critic → formatter",
       "min_browser_actions": 3,
-      "ui_hint": "Training listings — search, location filter, institute detail drill-down.",
-      "verify_hint": "Five institutes with fee/duration; multi-click navigation in replay."
+      "course_example": true,
+      "ui_hint": "UrbanPro listings — search/filter then open institute detail pages.",
+      "verify_hint": "Five institutes with duration + fee columns; replay logs ≥3 actions."
     },
     {
       "id": "B1",

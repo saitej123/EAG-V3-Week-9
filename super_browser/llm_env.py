@@ -52,6 +52,26 @@ def gemini_models_ordered() -> list[str]:
     return [single] if single else []
 
 
+_GEMINI_FALLBACK_CHAIN = (
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.5-flash-lite",
+)
+
+
+def gemini_models_with_fallbacks(primary: str | None = None) -> list[str]:
+    """Env models first, then stable defaults — avoids stalling on one unreachable model id."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for model in ([primary] if primary else []) + gemini_models_ordered() + list(_GEMINI_FALLBACK_CHAIN):
+        m = (model or "").strip()
+        if not m or m in seen:
+            continue
+        seen.add(m)
+        out.append(m)
+    return out
+
+
 # Lazy shared Gemini HTTP client (used by perception, decision, action — direct google-genai SDK).
 _gemini_lock = threading.Lock()
 _gemini_client_singleton: Any = False  # False = not yet resolved

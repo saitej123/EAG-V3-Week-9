@@ -6,7 +6,7 @@ cd "$ROOT"
 # Wrong VIRTUAL_ENV (e.g. another repo) makes `uv sync --active` install into the wrong venv.
 unset VIRTUAL_ENV
 
-uv sync
+uv sync --extra dev
 
 VENV_PY="$ROOT/.venv/bin/python"
 if [[ ! -x "$VENV_PY" ]]; then
@@ -32,13 +32,24 @@ print('playwright chromium ok')
 " 2>/dev/null; then
   echo "Installing Playwright Chromium (one-time download)..."
   "$VENV_PY" -m playwright install chromium
-  "$VENV_PY" -c "
+  if ! "$VENV_PY" -c "
 from super_browser.browser.playwright_ctx import playwright_chromium_status
 ready, err = playwright_chromium_status(probe_launch=True, refresh=True)
 if not ready:
     raise SystemExit(err or 'playwright chromium still missing after install')
 print('playwright chromium ok')
+"; then
+    echo "Playwright launch failed — installing Linux browser dependencies (WSL/Docker)..."
+    "$VENV_PY" -m playwright install-deps chromium || true
+    "$VENV_PY" -m playwright install chromium
+    "$VENV_PY" -c "
+from super_browser.browser.playwright_ctx import playwright_chromium_status
+ready, err = playwright_chromium_status(probe_launch=True, refresh=True)
+if not ready:
+    raise SystemExit(err or 'playwright chromium still missing after install-deps')
+print('playwright chromium ok')
 "
+  fi
 fi
 
 # Use project venv directly so StatReload workers inherit .venv (not uv's global python).

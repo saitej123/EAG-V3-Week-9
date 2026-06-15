@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -62,11 +62,31 @@ def _runtime_env_hint() -> str:
     return "Install deps with: uv sync && ./scripts/serve.sh"
 
 
-def _runtime_env_detail() -> str | None:
+def _runtime_env_detail(*, check_playwright: bool = True) -> str | None:
     missing = _missing_runtime_modules()
-    if not missing:
+    if missing:
+        return f"Missing Python packages: {', '.join(missing)}. {_runtime_env_hint()}"
+    if not check_playwright:
         return None
-    return f"Missing Python packages: {', '.join(missing)}. {_runtime_env_hint()}"
+    try:
+        from super_browser.browser.playwright_ctx import playwright_chromium_status
+
+        ready, err = playwright_chromium_status(refresh=False)
+        if not ready:
+            return err or _runtime_env_hint()
+    except Exception as e:
+        return str(e)
+    return None
+
+
+def _probe_playwright_startup() -> tuple[bool, str | None]:
+    """Launch Chromium once at startup (serve.sh / UI readiness)."""
+    try:
+        from super_browser.browser.playwright_ctx import playwright_chromium_status
+
+        return playwright_chromium_status(probe_launch=True, refresh=True)
+    except Exception as e:
+        return False, str(e)
 
 
 templates = Jinja2Templates(directory=str(_templates_dir))
@@ -137,10 +157,29 @@ async def lifespan(app: FastAPI):
     global log_queue
     log_queue = asyncio.Queue(maxsize=4096)
     _app_loop_holder["loop"] = asyncio.get_running_loop()
-    detail = _runtime_env_detail()
+    detail = _runtime_env_detail(check_playwright=False)
+    pw_ready, pw_err = await asyncio.to_thread(_probe_playwright_startup)
+    app.state.playwright_ready = pw_ready
+    app.state.playwright_error = pw_err
+    if not detail and pw_err:
+        detail = pw_err
     app.state.runtime_error = detail
     if detail:
         logger.error(f"[startup] {detail}")
+    elif not pw_ready:
+        logger.warning(f"[startup] Playwright Chromium not ready: {pw_err}")
+    else:
+        logger.info("[startup] Playwright Chromium ready for browser skill")
+        try:
+            from super_browser.persistence import SessionStore
+
+            if not SessionStore("dag_COMP_ref").exists():
+                from scripts.browser.seed_browser_sessions import seed_browser_reference_sessions
+
+                seeded = await asyncio.to_thread(seed_browser_reference_sessions)
+                logger.info(f"[startup] Seeded browser replay demos: {seeded}")
+        except Exception as e:
+            logger.warning(f"[startup] browser replay seed skipped: {e}")
     yield
     _app_loop_holder["loop"] = None
     log_queue = None
@@ -449,7 +488,10 @@ async def run_agent(request: QueryRequest):
     except Exception:
         _end_run()
         raise
-    return {"status": "Agent started"}
+    out: dict[str, Any] = {"status": "Agent started"}
+    if session_id:
+        out["session_id"] = session_id
+    return out
 
 
 @app.post("/api/agent/stop")
@@ -691,6 +733,21 @@ async def api_dag_browser_replay(session_id: str, node_id: str | None = None):
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
+@app.get("/api/dag/browser-screenshot")
+async def api_dag_browser_screenshot(session_id: str, path: str):
+    """Serve a persisted browser replay PNG from a session folder."""
+    try:
+        from super_browser.browser.page_capture import resolve_screenshot_path
+
+        full = resolve_screenshot_path(session_id, path)
+        if not full:
+            return JSONResponse({"status": "error", "detail": "Screenshot not found"}, status_code=404)
+        return FileResponse(full, media_type="image/png")
+    except Exception as e:
+        logger.error(f"[UI] browser screenshot failed: {e}")
+        return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
+
+
 @app.get("/api/queries/dag")
 async def api_dag_queries():
     """Browser comparison assignment queries (COMP, creative comparisons, cascade demos)."""
@@ -773,11 +830,59 @@ async def vision_endpoint(body: VisionRequest):
         return JSONResponse({"status": "error", "detail": str(e)}, status_code=500)
 
 
+@app.get("/api/browser/playwright-status")
+async def api_browser_playwright_status(probe: bool = False):
+    """UI preflight — verify Playwright Chromium is installed and can launch."""
+    try:
+        from super_browser.browser.playwright_ctx import (
+            async_playwright_chromium_status,
+            playwright_chromium_status,
+        )
+
+        if probe:
+            ready, err = await async_playwright_chromium_status(probe_launch=True)
+        else:
+            ready, err = await asyncio.to_thread(
+                playwright_chromium_status,
+                probe_launch=False,
+                refresh=True,
+            )
+        app.state.playwright_ready = ready
+        app.state.playwright_error = err
+        prev_runtime = getattr(app.state, "runtime_error", None)
+        if err and not prev_runtime:
+            app.state.runtime_error = err
+        elif ready and prev_runtime == getattr(app.state, "playwright_error", None):
+            app.state.runtime_error = _runtime_env_detail(check_playwright=False)
+        return {
+            "status": "success" if ready else "error",
+            "ready": ready,
+            "detail": err,
+            "playwright_chromium": ready,
+        }
+    except Exception as e:
+        logger.error(f"[UI] playwright status failed: {e}")
+        return JSONResponse({"status": "error", "ready": False, "detail": str(e)}, status_code=500)
+
+
 @app.get("/health")
 async def health():
     manifest = BASE_DIR / "corpus" / "MANIFEST.json"
     templates_ok = (_templates_dir / "index.html").is_file()
-    runtime_error = _runtime_env_detail()
+    runtime_error = _runtime_env_detail(check_playwright=False)
+    pw_ready = getattr(app.state, "playwright_ready", None)
+    pw_err = getattr(app.state, "playwright_error", None)
+    if pw_ready is None:
+        pw_ready, pw_err = await asyncio.to_thread(
+            lambda: __import__(
+                "super_browser.browser.playwright_ctx",
+                fromlist=["playwright_chromium_status"],
+            ).playwright_chromium_status(refresh=True)
+        )
+        app.state.playwright_ready = pw_ready
+        app.state.playwright_error = pw_err
+    if pw_err and not runtime_error:
+        runtime_error = pw_err
     return {
         "status": "degraded" if runtime_error else "ok",
         "templates": templates_ok,
@@ -785,6 +890,8 @@ async def health():
         "agent_busy": _is_run_busy(),
         "index_busy": _is_index_busy(),
         "faiss_available": "faiss" not in (_missing_runtime_modules()),
+        "playwright_chromium": bool(pw_ready),
+        "playwright_error": pw_err,
         "python_executable": str(Path(sys.executable).resolve()),
         "runtime_error": runtime_error,
     }
@@ -793,4 +900,4 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8080")))

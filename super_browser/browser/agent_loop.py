@@ -90,7 +90,7 @@ async def run_indexed_agent_loop(page, goal: str, llm: Any) -> TurnResult | None
                         input_tokens=input_tokens,
                         output_tokens=output_tokens,
                     )
-            note = await execute_action(page, action)
+            note = await execute_action(page, action, turn=turn)
             notes.append(note)
 
         if turn >= _MAX_TURNS - 1:

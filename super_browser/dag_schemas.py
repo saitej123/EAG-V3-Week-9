@@ -81,7 +81,7 @@ class CoderOutput(BaseModel):
     summary: str = ""
 
 
-BrowserPath = Literal["extract", "deterministic", "a11y", "vision", "gateway_blocked", "failed"]
+BrowserPath = Literal["extract", "deterministic", "agent", "a11y", "vision", "gateway_blocked", "failed"]
 BrowserErrorCode = Literal[
     "gateway_blocked",
     "extraction_failed",
@@ -102,6 +102,7 @@ class BrowserOutput(BaseModel):
     turns: int = 0
     content: str | None = None
     actions: list[dict[str, Any]] = Field(default_factory=list)
+    page_state_logs: list[dict[str, Any]] = Field(default_factory=list)
     final_url: str | None = None
     elapsed_s: float | None = None
     llm_calls: int = 0

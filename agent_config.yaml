@@ -84,10 +84,15 @@ skills:
   browser:
     prompt: prompts/browser.md
     description: >
-      Four-layer cascade (extract, deterministic, a11y, vision). Takes url and goal
-      in node metadata; returns BrowserOutput. Optional force_path metadata skips escalation.
-      Use when fetch_url fails on JS-rendered
-      pages, interactive widgets, or multi-step workflows.
+      Fetches and interacts with web pages through a Playwright cascade
+      (extract → render → agent → deterministic → a11y → vision).
+      Node metadata: url (required), goal (required), optional min_browser_actions,
+      query_id, force_path (opt-in: debug one layer or rare vision-from-screenshot).
+      Returns BrowserOutput with path, content, actions,
+      page_state_logs, and cost fields. Persisted under state/sessions/.
+      Use when Researcher fetch_url is insufficient: JS-rendered pages,
+      interactive widgets, multi-step workflows. On failure, orchestrator may
+      queue Researcher (gemini_live_search) instead of replanning Browser.
     tools: []
     temperature: 0.5
     max_tokens: 4096

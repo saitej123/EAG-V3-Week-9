@@ -12,6 +12,7 @@ from loguru import logger
 
 from .dom import detect_gateway_block, detect_live_gateway_block
 from .extract import content_is_useful
+from .playwright_ctx import PLAYWRIGHT_PROXY_HINT, is_playwright_proxy_error
 
 _NAV_TIMEOUT_MS = 45_000
 _RETRY_DELAYS_S = (0.0, 1.5, 3.0)
@@ -124,6 +125,8 @@ async def navigate_robust(page, url: str) -> str:
                 logger.debug(f"[browser] goto attempt {attempt + 1} wait={wait_until}: {e}")
                 continue
     logger.warning(f"[browser] navigate_robust failed for {url!r}: {last_err}")
+    if last_err and is_playwright_proxy_error(last_err):
+        logger.error(f"[browser] {PLAYWRIGHT_PROXY_HINT}")
     return page.url or url
 
 

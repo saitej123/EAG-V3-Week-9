@@ -54,6 +54,30 @@ def check_perception_tool_blindness() -> list[str]:
     return violations
 
 
+def check_flowchart_compliance() -> list[str]:
+    """Verify Browser cascade vs Researcher crawl4ai split matches course diagram."""
+    errors: list[str] = []
+    extract_src = (ROOT / "super_browser" / "browser" / "extract.py").read_text(encoding="utf-8")
+    skill_src = (ROOT / "super_browser" / "browser" / "skill.py").read_text(encoding="utf-8")
+    mcp_src = (ROOT / "super_browser" / "mcp_server.py").read_text(encoding="utf-8")
+
+    if "crawl4ai" in extract_src.lower():
+        errors.append("browser/extract.py must not import crawl4ai (Layer 1 = httpx + trafilatura)")
+    if "crawl4ai" in skill_src.lower():
+        errors.append("browser/skill.py must not import crawl4ai (Browser cascade is Playwright/httpx)")
+    if "httpx" not in extract_src or "trafilatura" not in extract_src:
+        errors.append("browser/extract.py must use httpx + trafilatura for Layer 1 extract")
+    if "_crawl4ai_fetch" not in mcp_src:
+        errors.append("mcp_server.py must expose crawl4ai for Researcher fetch_url/fetch_urls")
+
+    browser_md = (ROOT / "docs" / "BROWSER.md").read_text(encoding="utf-8")
+    for needle in ("User goal", "Distiller", "gateway_blocked", "Researcher only"):
+        if needle not in browser_md:
+            errors.append(f"docs/BROWSER.md missing flowchart marker: {needle!r}")
+
+    return errors
+
+
 def check_corpus_manifest() -> tuple[bool, str]:
     manifest = ROOT / "corpus" / "MANIFEST.json"
     if not manifest.is_file():
@@ -82,6 +106,12 @@ def main() -> int:
         errors.append(f"Perception SYSTEM contains MCP tool names: {violations}")
     else:
         print("PASS  Perception tool-blindness (zero MCP tool names in SYSTEM)")
+
+    flow_errors = check_flowchart_compliance()
+    if flow_errors:
+        errors.extend(flow_errors)
+    else:
+        print("PASS  flowchart compliance (httpx/trafilatura browser; crawl4ai in Researcher only)")
 
     ok, msg = check_corpus_manifest()
     if ok:

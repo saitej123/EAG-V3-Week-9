@@ -26,10 +26,14 @@ async def crawl_urls_live(page, urls: list[str], goal: str) -> dict[str, Any] | 
     sections: list[str] = []
     hosts: list[str] = []
 
+    from .page_capture import capture_page_state
+
     for idx, url in enumerate(urls[:8], start=1):
         try:
             final = await navigate_robust(page, url)
-            transcript.append(f"opened:{urlparse(final).netloc or url[:40]}")
+            note = f"opened:{urlparse(final).netloc or url[:40]}"
+            transcript.append(note)
+            await capture_page_state(page, turn=idx, note=note, action="navigate")
             if await live_page_blocked(page):
                 sections.append(f"## Page {idx}: {final}\n\n(bot wall / captcha — could not read live pricing)")
                 continue
@@ -56,7 +60,7 @@ async def crawl_urls_live(page, urls: list[str], goal: str) -> dict[str, Any] | 
             sections.append(f"## Page {idx}: {url}\n\n(fetch error: {e})")
 
     body = "\n\n---\n\n".join(sections).strip()
-    if len(body) < 200:
+    if len(body) < 80:
         return None
 
     return {

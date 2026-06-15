@@ -76,3 +76,19 @@ def test_assignment_payload():
 
 def test_assignment_corpus_validates():
     assert validate_assignment_corpus() == []
+
+
+def test_course_example_queries():
+    """Four comparison tasks match the course assignment brief."""
+    by_id = {str(r["id"]): r for r in load_assignment_queries()}
+    assert by_id["COMP"]["course_example"] is True
+    assert by_id["DEAL"]["course_example"] is True
+    assert by_id["STACK"]["course_example"] is True
+    assert by_id["FORGE"]["course_example"] is True
+    assert all(int(by_id[q]["min_browser_actions"]) >= 3 for q in ("COMP", "DEAL", "STACK", "FORGE"))
+    assert "₹80,000" in by_id["DEAL"]["query"]
+    assert "5 AI coding tools" in by_id["STACK"]["query"]
+    assert "text-generation" in by_id["COMP"]["query"].lower()
+    assert "5 CNC/VMC" in by_id["FORGE"]["query"]
+    spec = assignment_payload()
+    assert len(spec.get("course_examples") or []) == 4

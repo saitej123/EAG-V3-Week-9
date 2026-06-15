@@ -42,14 +42,40 @@ from .skills import SkillRegistry, SkillRunContext, format_memory_hits, run_skil
 
 CRITIC_FAIL_CAP = 1
 MAX_NODES = 60
+RECOVERY_PLANNER_CAP = 1
 _BROWSER_GRACEFUL_SKIP = frozenset({"browser_exhausted", "missing_dependency"})
 
 
-def coerce_planner_successors(user_query: str, successors: list[NodeSpec]) -> list[NodeSpec]:
+def coerce_planner_successors(
+    user_query: str,
+    successors: list[NodeSpec],
+    *,
+    skip_researcher_to_browser: bool = False,
+) -> list[NodeSpec]:
     """Inject fetch/comparison metadata when the planner under-specifies the plan."""
-    from .comparison_format import enrich_planner_nodes
+    from .comparison_format import (
+        coerce_researcher_to_browser,
+        collapse_parallel_browser_plan,
+        comparison_needs_browser,
+        distiller_metadata_for_query,
+        enrich_planner_nodes,
+    )
 
     successors = enrich_planner_nodes(user_query, successors)
+    successors = collapse_parallel_browser_plan(user_query, successors)
+    upgraded = coerce_researcher_to_browser(
+        user_query,
+        successors,
+        enabled=not skip_researcher_to_browser,
+    )
+    if any(isinstance(s, NodeSpec) and s.skill == "browser" for s in upgraded) and any(
+        isinstance(s, NodeSpec) and s.skill == "researcher" for s in successors
+    ):
+        logger.warning(
+            "[dag] comparison task requires browser interactions — upgraded researcher → browser"
+        )
+    successors = upgraded
+
     urls = extract_http_urls(user_query)
     if not urls:
         return successors
@@ -58,6 +84,36 @@ def coerce_planner_successors(user_query: str, successors: list[NodeSpec]) -> li
         return successors
     if skills != {"formatter"}:
         return successors
+
+    needs_browser, min_actions, row = comparison_needs_browser(user_query)
+    schema = distiller_metadata_for_query(user_query, row)
+    if needs_browser:
+        logger.warning(
+            "[dag] planner emitted formatter-only for comparison URL — injecting browser→distiller→formatter"
+        )
+        browser_meta: dict[str, Any] = {
+            "label": "browser",
+            "goal": user_query.strip(),
+            "url": urls[0],
+            "min_browser_actions": min_actions,
+        }
+        if row:
+            browser_meta["query_id"] = row.get("id")
+        return [
+            NodeSpec(skill="browser", inputs=["USER_QUERY"], metadata=browser_meta),
+            NodeSpec(
+                skill="distiller",
+                inputs=["n:browser"],
+                metadata={
+                    "label": "extract",
+                    "question": schema.get("question", ""),
+                    "required_keys": schema.get("required_keys", ""),
+                    "fields": schema.get("fields", ""),
+                },
+            ),
+            NodeSpec(skill="formatter", inputs=["n:extract"], metadata={"label": "out"}),
+        ]
+
     logger.warning(
         "[dag] planner emitted formatter-only for URL query — injecting researcher→distiller→formatter"
     )
@@ -72,7 +128,9 @@ def coerce_planner_successors(user_query: str, successors: list[NodeSpec]) -> li
             inputs=["n:fetch"],
             metadata={
                 "label": "extract",
-                "question": "Extract birth date, death date, and three key contributions",
+                "question": schema.get("question") or "Extract structured fields from the page",
+                "required_keys": schema.get("required_keys", ""),
+                "fields": schema.get("fields", ""),
             },
         ),
         NodeSpec(skill="formatter", inputs=["n:extract"], metadata={"label": "out"}),
@@ -282,8 +340,11 @@ class Graph:
             return False
         if st.status in (NodeStatus.complete, NodeStatus.skipped):
             return True
-        meta = self.dg.nodes.get(node_id, {}).get("metadata") or {}
-        if meta.get("recovery") and st.status == NodeStatus.failed and self.dg.has_edge(pred_id, node_id):
+        meta = self.dg.nodes.get(node_id, {}) or {}
+        node_meta = meta.get("metadata") or {}
+        if node_meta.get("recovery") and st.status == NodeStatus.failed and self.dg.has_edge(pred_id, node_id):
+            return True
+        if node_meta.get("browser_fallback") and st.status == NodeStatus.failed and self.dg.has_edge(pred_id, node_id):
             return True
         return False
 
@@ -646,13 +707,21 @@ class Executor:
                     self._recovered_branches,
                     self._critic_fail_cap_hit,
                     fail_cap=CRITIC_FAIL_CAP,
+                    max_recovery_planners=RECOVERY_PLANNER_CAP,
                 ):
                     return
 
             if result.successors and skill.extends_graph:
                 successors = list(result.successors)
                 if skill_name == "planner":
-                    successors = coerce_planner_successors(self.graph.user_query, successors)
+                    meta = state.metadata or {}
+                    failure = meta.get("failure_report") if isinstance(meta.get("failure_report"), dict) else {}
+                    skip_browser = bool(meta.get("recovery")) and failure.get("skill") == "browser"
+                    successors = coerce_planner_successors(
+                        self.graph.user_query,
+                        successors,
+                        skip_researcher_to_browser=skip_browser,
+                    )
                 result.successors = successors
                 created = self.graph.extend_from(node_id, result)
                 for nid in created:
@@ -692,6 +761,7 @@ class Executor:
             self._recovered_branches,
             self._critic_fail_cap_hit,
             fail_cap=CRITIC_FAIL_CAP,
+            max_recovery_planners=RECOVERY_PLANNER_CAP,
         )
 
     async def _handle_node_failure(
@@ -714,9 +784,18 @@ class Executor:
         if decision.action == "skip":
             if skill_name == "browser" and decision.reason in _BROWSER_GRACEFUL_SKIP:
                 self._skip_pending_descendants(node_id)
-                self._queue_browser_failure_formatter(node_id, state, decision)
+                self._queue_browser_research_fallback(node_id, state, decision)
                 return
             self._fatal_error = decision.note or error
+            return
+        if self._recovery_planner_count() >= RECOVERY_PLANNER_CAP:
+            from .comparison_format import is_comparison_query
+
+            if is_comparison_query(self.graph.user_query):
+                self._skip_pending_descendants(node_id)
+                self._queue_browser_research_fallback_for_comparison(node_id, state, decision)
+                return
+            self._fatal_error = "Recovery replan cap reached — stopping to avoid infinite loop"
             return
         if self.graph.dg.number_of_nodes() >= MAX_NODES:
             self._fatal_error = f"MAX_NODES cap ({MAX_NODES}) reached"
@@ -754,6 +833,38 @@ class Executor:
         )
         self._persist()
 
+    def _recovery_planner_count(self) -> int:
+        count = 0
+        for _nid, data in self.graph.dg.nodes(data=True):
+            if data.get("skill") != "planner":
+                continue
+            if (data.get("metadata") or {}).get("recovery"):
+                count += 1
+        return count
+
+    def _latest_complete_browser_node(self) -> str | None:
+        from .dag_schemas import NodeStatus
+
+        best: str | None = None
+        for nid, data in self.graph.dg.nodes(data=True):
+            if data.get("skill") != "browser":
+                continue
+            st = self.states.get(nid)
+            if st and st.status == NodeStatus.complete and st.output:
+                best = nid
+        return best
+
+    def _queue_browser_research_fallback_for_comparison(
+        self,
+        failed_nid: str,
+        state: NodeState,
+        decision: Any,
+    ) -> None:
+        """After recovery cap or distiller failure — researcher + formatter, not another browser wave."""
+        browser_nid = self._latest_complete_browser_node() or failed_nid
+        browser_state = self.states.get(browser_nid) or state
+        self._queue_browser_research_fallback(browser_nid, browser_state, decision)
+
     def _skip_pending_descendants(self, root_id: str, *, except_ids: set[str] | None = None) -> None:
         """After replan, abandon the old branch so recovery planner can run without deadlock."""
         skip = except_ids or set()
@@ -765,15 +876,27 @@ class Executor:
                 st.status = NodeStatus.skipped
                 self._flush_node_state(st)
 
-    def _queue_browser_failure_formatter(
+    def _queue_browser_research_fallback(
         self,
         failed_nid: str,
         state: NodeState,
         decision: Any,
     ) -> None:
-        """Queue a formatter instead of aborting the whole run when the browser cascade is exhausted."""
+        """After browser fails, run researcher (Tavily/search) → distiller → formatter."""
+        for succ in self.graph.dg.successors(failed_nid):
+            meta = (self.graph.dg.nodes[succ].get("metadata") or {})
+            if self.graph.dg.nodes[succ].get("skill") == "researcher" and meta.get("browser_fallback"):
+                _log_node(failed_nid, "browser", f"↪ researcher fallback already queued ({succ})")
+                return
+
+        from .comparison_format import (
+            distiller_metadata_for_query,
+            match_assignment_query,
+            researcher_fallback_question,
+        )
+
         for nid, data in self.graph.dg.nodes(data=True):
-            if data.get("skill") != "formatter":
+            if data.get("skill") not in {"formatter", "distiller"}:
                 continue
             st = self.states.get(nid)
             if st and st.status in (NodeStatus.pending, NodeStatus.running):
@@ -786,30 +909,86 @@ class Executor:
         if state.error:
             report.setdefault("error", state.error)
 
-        spec = NodeSpec(
-            skill="formatter",
-            inputs=["USER_QUERY"],
+        browser_label = str(self.graph.dg.nodes[failed_nid].get("label") or "browse")
+        browser_ref = f"n:{browser_label}"
+        has_partial = bool(state.output)
+
+        row = match_assignment_query(self.graph.user_query)
+        schema = distiller_metadata_for_query(self.graph.user_query, row)
+        research_question = researcher_fallback_question(
+            self.graph.user_query,
+            partial_browser_ref=browser_ref if has_partial else None,
+        )
+
+        research_inputs: list[str] = ["USER_QUERY"]
+        if has_partial:
+            research_inputs.append(browser_ref)
+
+        research = NodeSpec(
+            skill="researcher",
+            inputs=research_inputs,
             metadata={
-                "label": f"browser_graceful_{failed_nid.replace(':', '_')}",
-                "question": (
-                    "The live browser agent could not fully complete this task. "
-                    "Using the user goal and any partial browser notes, produce the best "
-                    "comparison table you can and clearly state what could not be verified on-site."
-                ),
+                "label": "research",
+                "question": research_question,
                 "failure_report": report,
+                "browser_fallback": True,
             },
         )
-        fid = self.graph.add_node_from_spec(spec)
+        rid = self.graph.add_node_from_spec(research)
+        self.graph.dg.add_edge(failed_nid, rid)
+        self.states[rid] = NodeState(
+            node_id=rid,
+            skill="researcher",
+            inputs=list(research.inputs),
+            metadata=dict(research.metadata),
+        )
+
+        distill_inputs = ["n:research"]
+        if has_partial:
+            distill_inputs.append(browser_ref)
+        distill_meta: dict[str, Any] = {
+            "label": "extract",
+            "question": schema.get("question", ""),
+            "required_keys": schema.get("required_keys", ""),
+            "fields": schema.get("fields", ""),
+            "failure_report": report,
+        }
+        if row:
+            distill_meta.setdefault("query_id", row.get("id"))
+        distill = NodeSpec(skill="distiller", inputs=distill_inputs, metadata=distill_meta)
+        did = self.graph.add_node_from_spec(distill)
+        self.graph.dg.add_edge(rid, did)
+        self.states[did] = NodeState(
+            node_id=did,
+            skill="distiller",
+            inputs=list(distill.inputs),
+            metadata=dict(distill.metadata),
+        )
+
+        fmt = NodeSpec(
+            skill="formatter",
+            inputs=["n:extract"],
+            metadata={
+                "label": "out",
+                "question": (
+                    "Merge search + any partial browser notes into the comparison table. "
+                    "Use — for missing cells. No footnotes or business-model excuses."
+                ),
+            },
+        )
+        fid = self.graph.add_node_from_spec(fmt)
+        self.graph.dg.add_edge(did, fid)
         self.states[fid] = NodeState(
             node_id=fid,
             skill="formatter",
-            inputs=list(spec.inputs),
-            metadata=dict(spec.metadata),
+            inputs=list(fmt.inputs),
+            metadata=dict(fmt.metadata),
         )
+
         _log_node(
             failed_nid,
             "browser",
-            f"↪ graceful formatter {fid} queued ({decision.reason})",
+            f"↪ researcher fallback {rid} → distiller {did} → formatter {fid} ({decision.reason})",
         )
         self._persist()
 

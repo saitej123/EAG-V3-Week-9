@@ -228,6 +228,97 @@ def test_force_path_runs_single_layer(monkeypatch):
     asyncio.run(_run())
 
 
+def test_multi_page_partial_continues_to_vlm(monkeypatch):
+    import asyncio
+
+    calls: list[str] = []
+
+    async def fake_multi(page, urls, goal):
+        calls.append("multi_page")
+        return {
+            "path": "extract",
+            "url": urls[0],
+            "content": "partial pricing " * 40,
+            "transcript": ["opened:example.com", "scroll:multi_page"],
+            "llm_calls": 0,
+        }
+
+    async def fake_vlm(url, goal, page=None):
+        calls.append("playwright_vlm")
+        return {
+            "path": "vision",
+            "url": url,
+            "content": "| tool | price |\n| --- | --- |\n| X | $1 |",
+            "transcript": ["vlm_live:done"],
+            "turns": 1,
+            "llm_calls": 1,
+            "input_tokens": 10,
+            "output_tokens": 5,
+        }
+
+    async def noop_layer(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("super_browser.browser.multi_page.crawl_urls_live", fake_multi)
+    monkeypatch.setattr("super_browser.browser.skill.layer_playwright_vlm", fake_vlm)
+    monkeypatch.setattr("super_browser.browser.skill.layer_render", noop_layer)
+    monkeypatch.setattr("super_browser.browser.skill.layer_agent", noop_layer)
+    monkeypatch.setattr("super_browser.browser.skill.layer_deterministic", noop_layer)
+    monkeypatch.setattr("super_browser.browser.skill.layer_a11y", noop_layer)
+    monkeypatch.setattr("super_browser.browser.skill.layer_vision", noop_layer)
+    monkeypatch.setattr("super_browser.browser.browser_use_bridge.browser_use_should_try", lambda: False)
+
+    class FakePage:
+        url = "https://example.com"
+
+    class FakeSession:
+        async def __aenter__(self):
+            return FakePage()
+
+        async def __aexit__(self, *args):
+            pass
+
+    def fake_session(**kwargs):
+        return FakeSession()
+
+    monkeypatch.setattr("super_browser.browser.playwright_ctx.browser_session", fake_session)
+
+    async def fake_nav(page, url):
+        return url
+
+    monkeypatch.setattr("super_browser.browser.navigation.navigate_robust", fake_nav)
+
+    async def fake_blocked(page):
+        return False
+
+    monkeypatch.setattr("super_browser.browser.navigation.live_page_blocked", fake_blocked)
+
+    async def fake_capture(*a, **k):
+        return None
+
+    monkeypatch.setattr("super_browser.browser.page_capture.capture_page_state", fake_capture)
+
+    async def _run() -> None:
+        from super_browser.browser.skill import run_browser_cascade
+
+        out, err = await run_browser_cascade(
+            "https://cursor.com/pricing",
+            "Compare 5 AI coding tools pricing",
+            llm=object(),
+            min_browser_actions=3,
+            all_urls=[
+                "https://cursor.com/pricing",
+                "https://github.com/features/copilot/plans",
+            ],
+        )
+        assert "multi_page" in calls
+        assert "playwright_vlm" in calls
+        assert out.path == "vision"
+        assert err is None
+
+    asyncio.run(_run())
+
+
 def test_reference_sessions_match_corpus():
     import json
     from pathlib import Path
@@ -270,6 +361,8 @@ def test_comp_replay_has_comparison_table():
     assert "| Model |" in report["comparison_table"]
     assert report["sections"][3]["count"] >= 3
     assert report["sections"][4]["title"] == "Screenshots or page-state logs"
+    sec5 = report["sections"][4]
+    assert sec5.get("screenshots") or "screenshot" in str(sec5.get("body") or "").lower()
 
 
 def test_comparison_task_skips_static_extract_success(monkeypatch):
@@ -352,6 +445,23 @@ def test_action_count_includes_vision_turns():
 
     assert _action_count({"transcript": ["vision_turn:1", "vision_turn:2", "vision_turn:3"]}) == 3
     assert _action_count({"transcript": ["render:playwright", "vision_turn:1"]}) == 1
+    assert _action_count({"transcript": ["vlm_live:extract", "vision_turn:1"]}) == 2
+
+
+def test_action_count_ignores_multi_page_synthetic_scroll():
+    from super_browser.browser.skill import _action_count
+
+    assert _action_count({"transcript": ["opened:flipkart.com", "scroll:multi_page"]}) == 1
+
+
+def test_comparison_content_ready_rejects_homepage_blob():
+    from super_browser.browser.skill import _comparison_content_ready
+
+    goal = "Compare 3 laptops under ₹80,000 on Flipkart"
+    homepage = "Online Shopping India | Buy Mobiles, Electronics, Appliances & More" * 20
+    assert _comparison_content_ready(homepage, goal, min_browser_actions=3) is False
+    table = "| Name | Price |\n| --- | --- |\n| A | ₹50,000 |\n| B | ₹60,000 |\n| C | ₹70,000 |"
+    assert _comparison_content_ready(table, goal, min_browser_actions=3) is True
 
 
 def test_format_browser_path_labels():
@@ -359,3 +469,23 @@ def test_format_browser_path_labels():
 
     assert "blocked" in format_browser_path("gateway_blocked")
     assert format_browser_path("a11y").startswith("a11y")
+    assert "agent" in format_browser_path("agent")
+
+
+def test_to_browser_output_accepts_agent_path():
+    from super_browser.browser.skill import to_browser_output
+
+    out = to_browser_output(
+        url="https://example.com",
+        goal="compare pricing",
+        raw={
+            "path": "agent",
+            "content": "Pro plan $20",
+            "transcript": ["click_index:1", "click_index:2", "scroll:down"],
+            "llm_calls": 2,
+        },
+    )
+    assert out.path == "agent"
+    assert out.content == "Pro plan $20"
+    assert len(out.actions) == 3
+

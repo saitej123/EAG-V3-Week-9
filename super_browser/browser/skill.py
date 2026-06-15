@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -18,6 +19,7 @@ from .ledger import apply_cost_fields, estimate_cost_usd
 from .navigation import live_page_blocked, navigate_robust
 from .playwright_ctx import PLAYWRIGHT_INSTALL_HINT, browser_session, is_playwright_browser_missing_error
 from .playwright_render import layer_render
+from .playwright_vlm import layer_playwright_vlm
 from .vision import layer_vision
 
 _LAYER_PATHS = frozenset({"extract", "deterministic", "agent", "a11y", "vision", "gateway_blocked", "failed"})
@@ -38,22 +40,29 @@ def _actions_from_transcript(transcript: list[str] | None) -> list[dict[str, Any
 
 
 def to_browser_output(*, url: str, goal: str, raw: dict[str, Any]) -> BrowserOutput:
+    from .page_capture import merge_capture_into
+
     try:
-        raw = apply_cost_fields(dict(raw))
+        raw = apply_cost_fields(merge_capture_into(dict(raw)))
     except Exception:
-        raw = dict(raw)
-    path = raw.get("path") or "failed"
+        raw = merge_capture_into(dict(raw))
+    path = str(raw.get("path") or "failed")
     if path not in _LAYER_PATHS:
         path = "failed"
     inp = int(raw.get("input_tokens") or 0)
     out = int(raw.get("output_tokens") or 0)
-    return BrowserOutput(
+    page_logs = raw.get("page_state_logs")
+    if not isinstance(page_logs, list) or not page_logs:
+        page_logs = _actions_from_transcript(raw.get("transcript"))
+    actions = page_logs if page_logs else _actions_from_transcript(raw.get("transcript"))
+    payload = dict(
         url=url,
         goal=goal,
-        path=path,  # type: ignore[arg-type]
+        path=path,
         turns=int(raw.get("turns") or 0),
         content=_content_text(raw.get("content")),
-        actions=_actions_from_transcript(raw.get("transcript")),
+        actions=actions,
+        page_state_logs=page_logs if isinstance(page_logs, list) else [],
         final_url=str(raw.get("url") or raw.get("final_url") or url),
         elapsed_s=raw.get("elapsed_s") or raw.get("total_elapsed_s"),
         llm_calls=int(raw.get("llm_calls") or 0),
@@ -65,6 +74,12 @@ def to_browser_output(*, url: str, goal: str, raw: dict[str, Any]) -> BrowserOut
             else estimate_cost_usd(input_tokens=inp, output_tokens=out)
         ),
     )
+    try:
+        return BrowserOutput(**payload)
+    except Exception as e:
+        logger.warning(f"[browser] BrowserOutput validation failed ({e}); coercing to failed")
+        payload["path"] = "failed"
+        return BrowserOutput(**payload)
 
 
 def classify_browser_error(raw: dict[str, Any], *, last_layer: str | None = None) -> BrowserErrorCode:
@@ -110,13 +125,18 @@ def _action_count(result: dict[str, Any]) -> int:
             continue
         if note in {"fallback:body_text"}:
             continue
+        if note.startswith("scroll:multi_page"):
+            continue
         if note.startswith(("click_index:", "scroll:", "go_to_url:", "wait:")):
+            count += 1
+            continue
+        if note.startswith(("browser_use:action:", "browser_use:step:")):
             count += 1
             continue
         if note.startswith(("click_", "clicked:", "typed:", "opened:", "action_failed:", "click_not_found:")):
             count += 1
             continue
-        if note.startswith(("vision_turn:", "click_mark:", "click_coord:", "vlm_raw:")):
+        if note.startswith(("vision_turn:", "click_mark:", "click_coord:", "vlm_raw:", "vlm_live:")):
             count += 1
             continue
         if note.startswith("vision:"):
@@ -125,7 +145,57 @@ def _action_count(result: dict[str, Any]) -> int:
     return count
 
 
-def _layer_succeeded(result: dict[str, Any] | None, *, min_browser_actions: int = 0) -> bool:
+def _comparison_content_ready(content: Any, goal: str, *, min_browser_actions: int) -> bool:
+    """True when extracted text looks like a finished comparison (not a portal homepage)."""
+    if min_browser_actions <= 0:
+        return True
+    text = str(content or "").strip()
+    if not text:
+        return False
+
+    from ..comparison_format import parse_comparison_spec
+
+    spec = parse_comparison_spec(goal)
+    row_count = spec.row_count if spec.is_comparison else 3
+
+    table_lines = [
+        ln
+        for ln in text.splitlines()
+        if "|" in ln and not re.match(r"^\s*\|?\s*[-:| ]+\s*\|?\s*$", ln.strip())
+    ]
+    if len(table_lines) >= row_count + 1:
+        return True
+
+    price_hits = len(re.findall(r"₹[\d,]+|\$[\d,]+|(?:Rs\.?|INR)\s*[\d,]+", text, re.I))
+    if price_hits >= row_count:
+        return True
+
+    page_sections = len(re.findall(r"^## Page \d+:", text, re.M))
+    if page_sections >= row_count and len(text) >= 900:
+        return True
+
+    return False
+
+
+def _content_rich_enough(content: Any, *, min_browser_actions: int, goal: str = "") -> bool:
+    """Accept partial browser output when VLM/Playwright already captured a usable table."""
+    text = str(content or "").strip()
+    if not text:
+        return False
+    if "|" in text and text.count("|") >= 4:
+        return True
+    if len(text) < 400:
+        return False
+    if min_browser_actions <= 0:
+        return len(text) >= 400
+    if _comparison_content_ready(text, goal, min_browser_actions=min_browser_actions):
+        return True
+    if len(text) >= 900:
+        return True
+    return False
+
+
+def _layer_succeeded(result: dict[str, Any] | None, *, min_browser_actions: int = 0, goal: str = "") -> bool:
     if not result:
         return False
     if result.get("error_code") == "gateway_blocked" or result.get("gateway_blocked"):
@@ -134,6 +204,10 @@ def _layer_succeeded(result: dict[str, Any] | None, *, min_browser_actions: int 
     if path not in {"extract", "deterministic", "agent", "a11y", "vision"} or not result.get("content"):
         return False
     if min_browser_actions > 0 and _action_count(result) < min_browser_actions:
+        if _comparison_content_ready(result.get("content"), goal, min_browser_actions=min_browser_actions):
+            return True
+        if _content_rich_enough(result.get("content"), min_browser_actions=min_browser_actions, goal=goal):
+            return True
         return False
     return True
 
@@ -158,17 +232,22 @@ async def run_browser_cascade(
     force_path: str | None = None,
     min_browser_actions: int = 0,
     all_urls: list[str] | None = None,
+    session_id: str = "",
+    node_id: str = "",
 ) -> tuple[BrowserOutput, BrowserErrorCode | None]:
     """Run extract → render → deterministic → a11y → vision; never raises."""
+    from .page_capture import browser_capture_session
+
     try:
-        return await _run_browser_cascade_impl(
-            url,
-            goal,
-            llm=llm,
-            force_path=force_path,
-            min_browser_actions=min_browser_actions,
-            all_urls=all_urls,
-        )
+        async with browser_capture_session(session_id, node_id):
+            return await _run_browser_cascade_impl(
+                url,
+                goal,
+                llm=llm,
+                force_path=force_path,
+                min_browser_actions=min_browser_actions,
+                all_urls=all_urls,
+            )
     except Exception as e:
         logger.error(f"[browser] cascade fatal (contained): {e}")
         failed = {
@@ -193,10 +272,12 @@ async def _run_browser_cascade_impl(
     started = time.time()
     goal = (goal or url).strip()
     url = url.strip()
+    from .urls import canonical_browser_url
+
     targets: list[str] = []
     seen: set[str] = set()
     for candidate in list(all_urls or []) + [url]:
-        u = (candidate or "").strip().rstrip(".,;)")
+        u = canonical_browser_url(candidate)
         if u and u not in seen:
             seen.add(u)
             targets.append(u)
@@ -206,28 +287,6 @@ async def _run_browser_cascade_impl(
     forced = (force_path or "").strip().lower()
     if forced not in {"extract", "deterministic", "agent", "a11y", "vision"}:
         forced = ""
-
-    from .browser_use_bridge import browser_use_enabled, try_browser_use_task
-    from .browseros_bridge import try_browseros_task
-    from .browser_backend import browseros_enabled
-
-    if not forced and browseros_enabled():
-        browseros = await _safe_layer(
-            "browseros",
-            try_browseros_task(task=goal, url=targets[0], llm=llm),
-        )
-        finished = await _finish(browseros, "agent")
-        if finished:
-            return finished
-
-    if not forced and browser_use_enabled():
-        bridge = await _safe_layer(
-            "browser_use",
-            try_browser_use_task(task=goal, url=targets[0]),
-        )
-        finished = await _finish(bridge, "agent")
-        if finished:
-            return finished
 
     last_layer: str | None = None
     best_partial: dict[str, Any] | None = None
@@ -280,7 +339,7 @@ async def _run_browser_cascade_impl(
             return out, "gateway_blocked"
         if result.get("content"):
             _remember_partial(result)
-        if result.get("content") and not _layer_succeeded(result, min_browser_actions=min_actions):
+        if result.get("content") and not _layer_succeeded(result, min_browser_actions=min_actions, goal=goal):
             logged = _action_count(result)
             if min_actions and logged < min_actions:
                 logger.info(
@@ -288,7 +347,7 @@ async def _run_browser_cascade_impl(
                     f"(need ≥{min_actions}) — escalating"
                 )
             return None
-        if not _layer_succeeded(result, min_browser_actions=min_actions):
+        if not _layer_succeeded(result, min_browser_actions=min_actions, goal=goal):
             return None
         result["total_elapsed_s"] = round(time.time() - started, 2)
         out = to_browser_output(url=url, goal=goal, raw=result)
@@ -323,10 +382,18 @@ async def _run_browser_cascade_impl(
             return None
 
     def _exhausted() -> tuple[BrowserOutput, BrowserErrorCode | None]:
-        if best_partial and _layer_succeeded(best_partial, min_browser_actions=min_actions):
-            best_partial["total_elapsed_s"] = round(time.time() - started, 2)
-            logger.info(f"[browser] accepting best partial result from {best_partial.get('path')}")
-            return to_browser_output(url=url, goal=goal, raw=best_partial), None
+        if best_partial and best_partial.get("content"):
+            if _layer_succeeded(best_partial, min_browser_actions=min_actions, goal=goal):
+                best_partial["total_elapsed_s"] = round(time.time() - started, 2)
+                logger.info(f"[browser] accepting best partial result from {best_partial.get('path')}")
+                return to_browser_output(url=url, goal=goal, raw=best_partial), None
+            if _content_rich_enough(best_partial.get("content"), min_browser_actions=min_actions, goal=goal):
+                best_partial["total_elapsed_s"] = round(time.time() - started, 2)
+                logger.info(
+                    f"[browser] accepting rich VLM partial from {best_partial.get('path')} "
+                    f"(actions={_action_count(best_partial)}, need ≥{min_actions})"
+                )
+                return to_browser_output(url=url, goal=goal, raw=best_partial), None
         logger.warning(f"[browser] cascade exhausted for {url}")
         err = "All browser layers failed to extract useful content."
         if min_actions:
@@ -335,6 +402,17 @@ async def _run_browser_cascade_impl(
         return to_browser_output(url=url, goal=goal, raw=failed), classify_browser_error(
             failed, last_layer=last_layer
         )
+
+    from .browser_use_bridge import browser_use_should_try, try_browser_use_task
+
+    if not forced and browser_use_should_try():
+        bridge = await _safe_layer(
+            "browser_use",
+            try_browser_use_task(task=goal, url=targets[0], llm=llm),
+        )
+        finished = await _finish(bridge, "agent")
+        if finished:
+            return finished
 
     if forced == "extract":
         finished = await _finish(await _safe_layer("extract", layer_extract(url, goal)), "extract")
@@ -383,6 +461,7 @@ async def _run_browser_cascade_impl(
 
     playwright_layers: list[tuple[str, Callable[[Any], Awaitable[dict[str, Any] | None]]]] = [
         ("extract", lambda pg: layer_render(url, goal, page=pg)),
+        ("vision", lambda pg: layer_playwright_vlm(url, goal, page=pg)),
         ("agent", lambda pg: layer_agent(url, goal, llm, page=pg)),
         ("deterministic", lambda pg: layer_deterministic(url, goal, page=pg)),
         ("a11y", lambda pg: layer_a11y(url, goal, llm, page=pg)),
@@ -398,8 +477,17 @@ async def _run_browser_cascade_impl(
                 finished = await _finish(multi, "extract")
                 if finished:
                     return finished
+                if isinstance(multi, dict) and multi.get("content"):
+                    _remember_partial(multi)
+                    logger.info(
+                        "[browser] multi-site crawl partial — continuing cascade "
+                        "(render → VLM → agent → a11y → vision)"
+                    )
 
             await navigate_robust(page, _initial_url(targets[0], goal))
+            from .page_capture import capture_page_state
+
+            await capture_page_state(page, turn=0, note="initial_load", action="navigate")
             finished = await _run_playwright_layers(playwright_layers, shared_page=page)
             if finished:
                 return finished

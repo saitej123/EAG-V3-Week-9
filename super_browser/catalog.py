@@ -216,6 +216,8 @@ def min_browser_actions_for_text(text: str) -> int:
 def enrich_assignment_query(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
     out["expected_flow"] = expected_flow_for_query(row)
+    if row.get("course_example"):
+        out["course_example"] = True
     return out
 
 
@@ -239,6 +241,7 @@ def browser_queries_payload() -> dict[str, Any]:
         "description": spec.get("description", ""),
         "session_root": spec.get("session_root", "state/sessions"),
         "log_dir": spec.get("log_dir", "logs/dag"),
+        "course_examples": spec.get("course_examples") or [],
         "query_count": len(queries),
         "queries": queries,
         "design_queries": design,

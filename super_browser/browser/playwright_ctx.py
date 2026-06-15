@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, AsyncIterator
 
 from loguru import logger
-
-from .browser_backend import browser_backend, browseros_cdp_url, use_browseros_cdp
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Page, Playwright
@@ -35,7 +37,40 @@ PLAYWRIGHT_INSTALL_HINT = (
     "(or restart with ./scripts/serve.sh which installs it automatically)."
 )
 
+PLAYWRIGHT_DEPS_HINT = (
+    "Playwright Chromium failed to launch (often missing Linux libraries on WSL). "
+    "Try: sudo .venv/bin/python -m playwright install-deps chromium "
+    "then .venv/bin/python -m playwright install chromium"
+)
+
+PLAYWRIGHT_PROXY_HINT = (
+    "Playwright navigation failed (net::ERR_TUNNEL_CONNECTION_FAILED). "
+    "A broken HTTP(S)_PROXY is often the cause on WSL/VPN. "
+    "Try: export BROWSER_IGNORE_PROXY=1 then restart the server."
+)
+
 _STATUS_CACHE: tuple[bool, str | None] | None = None
+_STATUS_POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pw-status")
+
+
+def _ignore_browser_proxy() -> bool:
+    return os.environ.get("BROWSER_IGNORE_PROXY", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _launch_env() -> dict[str, str] | None:
+    """Strip proxy env vars when BROWSER_IGNORE_PROXY=1 (fixes ERR_TUNNEL_CONNECTION_FAILED)."""
+    if not _ignore_browser_proxy():
+        return None
+    env = dict(os.environ)
+    for key in list(env):
+        if key.lower() in {"http_proxy", "https_proxy", "all_proxy"}:
+            env[key] = ""
+    return env
+
+
+def is_playwright_proxy_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return "err_tunnel_connection_failed" in text or "tunnel connection failed" in text
 
 
 def is_playwright_browser_missing_error(exc: BaseException) -> bool:
@@ -43,77 +78,118 @@ def is_playwright_browser_missing_error(exc: BaseException) -> bool:
     return (
         "executable doesn't exist" in text
         or "playwright install" in text
-        or "browser has been closed" in text and "chromium" in text
+        or "browser has been closed" in text
+        and "chromium" in text
     )
 
 
-def playwright_chromium_status(*, probe_launch: bool = False, refresh: bool = False) -> tuple[bool, str | None]:
-    """Return (ready, error_message). Does not raise.
-
-    Default check verifies the Chromium binary path exists (fast).
-    Pass ``probe_launch=True`` to actually launch the browser (serve.sh verification).
-    """
+def _status_result(*, ready: bool, err: str | None, probe_launch: bool) -> tuple[bool, str | None]:
     global _STATUS_CACHE
-    if _STATUS_CACHE is not None and not probe_launch and not refresh:
-        return _STATUS_CACHE
+    result = (ready, err)
+    if not probe_launch or ready:
+        _STATUS_CACHE = result
+    return result
 
+
+def _playwright_chromium_status_sync(*, probe_launch: bool) -> tuple[bool, str | None]:
+    """Sync probe — must not run on the asyncio event loop thread."""
     try:
-        from pathlib import Path
-
         from playwright.sync_api import sync_playwright
     except ImportError as e:
-        result = (False, f"playwright package missing: {e}")
-        if not probe_launch:
-            _STATUS_CACHE = result
-        return result
+        return False, f"playwright package missing: {e}"
 
     try:
         with sync_playwright() as pw:
             exe = pw.chromium.executable_path
             if not exe or not Path(exe).is_file():
-                result = (False, PLAYWRIGHT_INSTALL_HINT)
-            elif probe_launch:
-                browser = pw.chromium.launch(headless=True, args=_LAUNCH_ARGS)
-                browser.close()
-                result = (True, None)
-            else:
-                result = (True, None)
+                return False, PLAYWRIGHT_INSTALL_HINT
+            if not probe_launch:
+                return True, None
+            browser = pw.chromium.launch(headless=True, args=_LAUNCH_ARGS, env=_launch_env())
+            browser.close()
+            return True, None
     except Exception as e:
         if is_playwright_browser_missing_error(e):
-            result = (False, PLAYWRIGHT_INSTALL_HINT)
-        else:
-            result = (False, str(e))
-
-    if not probe_launch or result[0]:
-        _STATUS_CACHE = result
-    return result
+            return False, PLAYWRIGHT_INSTALL_HINT
+        low = str(e).lower()
+        if probe_launch and any(k in low for k in ("lib", "shared object", "cannot open", "failed to launch")):
+            return False, f"{PLAYWRIGHT_DEPS_HINT} ({e})"
+        return False, str(e)
 
 
-async def _launch_browser(pw: "Playwright", *, headless: bool = True) -> tuple["Browser", bool]:
-    """Return (browser, external). External browsers must not be closed by us."""
-    cdp = browseros_cdp_url() if use_browseros_cdp() else ""
-    if cdp:
+def playwright_chromium_status(*, probe_launch: bool = False, refresh: bool = False) -> tuple[bool, str | None]:
+    """Return (ready, error_message). Does not raise.
+
+    Safe to call from sync code or from inside a running asyncio loop (uses a worker thread).
+    """
+    global _STATUS_CACHE
+    if _STATUS_CACHE is not None and not probe_launch and not refresh:
+        return _STATUS_CACHE
+
+    in_loop = False
+    try:
+        asyncio.get_running_loop()
+        in_loop = True
+    except RuntimeError:
+        in_loop = False
+
+    if in_loop:
+        future = _STATUS_POOL.submit(_playwright_chromium_status_sync, probe_launch=probe_launch)
+        ready, err = future.result(timeout=90)
+    else:
+        ready, err = _playwright_chromium_status_sync(probe_launch=probe_launch)
+
+    return _status_result(ready=ready, err=err, probe_launch=probe_launch)
+
+
+async def async_playwright_chromium_status(*, probe_launch: bool = False) -> tuple[bool, str | None]:
+    """Async-friendly Chromium readiness check (real launch probe when requested)."""
+    if probe_launch:
         try:
-            browser = await pw.chromium.connect_over_cdp(cdp)
-            logger.info(f"[browser] connected to BrowserOS/CDP at {cdp}")
-            return browser, True
-        except Exception as e:
-            logger.warning(f"[browser] CDP connect failed ({cdp}): {e} — falling back to launch")
+            from playwright.async_api import async_playwright
 
-    backend = browser_backend()
+            async with async_playwright() as pw:
+                exe = pw.chromium.executable_path
+                if not exe or not Path(exe).is_file():
+                    return _status_result(ready=False, err=PLAYWRIGHT_INSTALL_HINT, probe_launch=True)
+                browser = await pw.chromium.launch(headless=True, args=_LAUNCH_ARGS, env=_launch_env())
+                await browser.close()
+            return _status_result(ready=True, err=None, probe_launch=True)
+        except Exception as e:
+            if is_playwright_browser_missing_error(e):
+                return _status_result(ready=False, err=PLAYWRIGHT_INSTALL_HINT, probe_launch=True)
+            low = str(e).lower()
+            if any(k in low for k in ("lib", "shared object", "cannot open", "failed to launch")):
+                return _status_result(
+                    ready=False,
+                    err=f"{PLAYWRIGHT_DEPS_HINT} ({e})",
+                    probe_launch=True,
+                )
+            return _status_result(ready=False, err=str(e), probe_launch=True)
+    return await asyncio.to_thread(playwright_chromium_status, probe_launch=False, refresh=True)
+
+
+async def _launch_browser(pw: "Playwright", *, headless: bool = True) -> "Browser":
+    backend = os.environ.get("BROWSER_BACKEND", "chromium").strip().lower()
+    env = _launch_env()
     try:
         if backend == "chrome":
-            browser = await pw.chromium.launch(
-                channel="chrome",
-                headless=headless,
-                args=_LAUNCH_ARGS,
-            )
-        else:
-            browser = await pw.chromium.launch(headless=headless, args=_LAUNCH_ARGS)
-        return browser, False
+            try:
+                return await pw.chromium.launch(
+                    channel="chrome",
+                    headless=headless,
+                    args=_LAUNCH_ARGS,
+                    env=env,
+                )
+            except Exception as e:
+                logger.warning(f"[browser] Chrome channel unavailable ({e}); using bundled Chromium")
+        return await pw.chromium.launch(headless=headless, args=_LAUNCH_ARGS, env=env)
     except Exception as e:
         if is_playwright_browser_missing_error(e):
             raise RuntimeError(PLAYWRIGHT_INSTALL_HINT) from e
+        low = str(e).lower()
+        if any(k in low for k in ("lib", "shared object", "cannot open", "failed to launch")):
+            raise RuntimeError(f"{PLAYWRIGHT_DEPS_HINT} ({e})") from e
         raise
 
 
@@ -130,31 +206,21 @@ async def _new_context(browser: "Browser") -> "BrowserContext":
     return context
 
 
-async def _open_page(browser: "Browser", *, external: bool) -> tuple["BrowserContext", "Page"]:
-    if external and browser.contexts:
-        context = browser.contexts[0]
-        page = context.pages[0] if context.pages else await context.new_page()
-    else:
-        context = await _new_context(browser)
-        page = await context.new_page()
-    page.on("dialog", lambda dialog: dialog.accept())
-    return context, page
-
-
 @asynccontextmanager
 async def browser_page(*, headless: bool = True) -> AsyncIterator[tuple["Playwright", "Browser", "Page"]]:
     """Yield (playwright, browser, page) with stealth-ish defaults."""
     from playwright.async_api import async_playwright
 
     async with async_playwright() as pw:
-        browser, external = await _launch_browser(pw, headless=headless)
-        context, page = await _open_page(browser, external=external)
+        browser = await _launch_browser(pw, headless=headless)
+        context = await _new_context(browser)
+        page = await context.new_page()
+        page.on("dialog", lambda dialog: dialog.accept())
         try:
             yield pw, browser, page
         finally:
-            if not external:
-                await context.close()
-                await browser.close()
+            await context.close()
+            await browser.close()
 
 
 @asynccontextmanager
@@ -163,11 +229,12 @@ async def browser_session(*, headless: bool = True) -> AsyncIterator["Page"]:
     from playwright.async_api import async_playwright
 
     async with async_playwright() as pw:
-        browser, external = await _launch_browser(pw, headless=headless)
-        context, page = await _open_page(browser, external=external)
+        browser = await _launch_browser(pw, headless=headless)
+        context = await _new_context(browser)
+        page = await context.new_page()
+        page.on("dialog", lambda dialog: dialog.accept())
         try:
             yield page
         finally:
-            if not external:
-                await context.close()
-                await browser.close()
+            await context.close()
+            await browser.close()

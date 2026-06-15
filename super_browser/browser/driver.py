@@ -164,17 +164,24 @@ async def _click_index(page, action: dict[str, Any]) -> str:
     return f"click_index:{idx}:{label}"
 
 
-async def execute_action(page, action: dict[str, Any]) -> str:
+async def execute_action(page, action: dict[str, Any], *, turn: int | None = None) -> str:
     """Run one fenced action on the live page."""
+    from .page_capture import capture_page_state
+
     kind = (action.get("action") or "").lower()
     target = action_target(action)
     text = str(action.get("text") or "").strip()
+
+    async def _finish(note: str) -> str:
+        if note and kind not in {"done", "extract"}:
+            await capture_page_state(page, turn=turn, note=note, action=kind or "state")
+        return note
 
     if kind in {"done", "extract"}:
         return (action.get("answer") or text or "done").strip()
 
     if kind in {"click_index", "click"} and action.get("index") is not None:
-        return await _click_index(page, action)
+        return await _finish(await _click_index(page, action))
 
     if kind == "scroll":
         direction = str(action.get("direction") or "down").lower()
@@ -182,9 +189,9 @@ async def execute_action(page, action: dict[str, Any]) -> str:
         try:
             await page.mouse.wheel(0, delta)
             await page.wait_for_timeout(600)
-            return f"scroll:{direction}"
+            return await _finish(f"scroll:{direction}")
         except Exception as e:
-            return f"scroll_failed:{e}"
+            return await _finish(f"scroll_failed:{e}")
 
     if kind == "wait":
         try:
@@ -192,19 +199,19 @@ async def execute_action(page, action: dict[str, Any]) -> str:
         except (TypeError, ValueError):
             secs = 1.0
         await page.wait_for_timeout(int(secs * 1000))
-        return f"wait:{secs}s"
+        return await _finish(f"wait:{secs}s")
 
     if kind in {"go_to_url", "navigate", "open_url"}:
         target_url = str(action.get("url") or text or "").strip()
         if not target_url.startswith("http"):
-            return "go_to_url_invalid"
+            return await _finish("go_to_url_invalid")
         try:
             from .navigation import navigate_robust
 
             await navigate_robust(page, target_url)
-            return f"go_to_url:{target_url[:60]}"
+            return await _finish(f"go_to_url:{target_url[:60]}")
         except Exception as e:
-            return f"go_to_url_failed:{e}"
+            return await _finish(f"go_to_url_failed:{e}")
 
     if kind == "click" and target:
         aria_snippet = target[:40].replace("\\", "\\\\").replace('"', '\\"')
@@ -222,8 +229,8 @@ async def execute_action(page, action: dict[str, Any]) -> str:
             if await loc.count() > 0:
                 await loc.first.click(timeout=10000)
                 await page.wait_for_timeout(900)
-                return f"clicked:{target[:60]}"
-        return f"click_not_found:{target[:60]}"
+                return await _finish(f"clicked:{target[:60]}")
+        return await _finish(f"click_not_found:{target[:60]}")
 
     if kind == "type" and target:
         for factory in (
@@ -236,8 +243,8 @@ async def execute_action(page, action: dict[str, Any]) -> str:
             if await loc.count() > 0:
                 await loc.first.fill(text, timeout=8000)
                 await page.wait_for_timeout(400)
-                return f"typed:{target[:40]}"
-        return f"type_not_found:{target[:40]}"
+                return await _finish(f"typed:{target[:40]}")
+        return await _finish(f"type_not_found:{target[:40]}")
 
     if kind == "drag":
         fx = float(action.get("from_x", 0))
@@ -249,9 +256,9 @@ async def execute_action(page, action: dict[str, Any]) -> str:
         await page.mouse.move(tx, ty)
         await page.mouse.up()
         await page.wait_for_timeout(500)
-        return f"drag:{fx},{fy}->{tx},{ty}"
+        return await _finish(f"drag:{fx},{fy}->{tx},{ty}")
 
-    return f"unsupported_action:{kind or 'unknown'}"
+    return await _finish(f"unsupported_action:{kind or 'unknown'}")
 
 
 async def extract_huggingface_top_models(page, *, limit: int = 3) -> str:

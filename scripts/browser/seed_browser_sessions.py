@@ -61,9 +61,36 @@ COMP_TABLE = """| Model | Likes | Description |
 | mistralai/Mistral-7B-Instruct-v0.3 | 8.1k | Mistral 7B instruction model |"""
 
 
-def _browser_output(*, qid: str, query: dict, run: dict | None = None) -> dict:
+def _seed_page_state_logs(store: SessionStore, browser_node_id: str, actions: list[dict]) -> list[dict]:
+    """Write placeholder PNGs + screenshot paths for replay section 5 demos."""
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return list(actions)
+
+    safe = browser_node_id.replace(":", "_")
+    shot_dir = store.root / "browser_screenshots" / safe
+    shot_dir.mkdir(parents=True, exist_ok=True)
+    logs: list[dict] = []
+    for i, act in enumerate(actions, start=1):
+        entry = dict(act)
+        filename = f"{i:03d}.png"
+        path = shot_dir / filename
+        img = Image.new("RGB", (640, 400), (248, 250, 252))
+        draw = ImageDraw.Draw(img)
+        note = str(entry.get("note") or entry.get("action") or f"turn {i}")
+        draw.text((16, 16), f"Reference replay — {note[:72]}", fill=(30, 41, 59))
+        img.save(path)
+        entry.setdefault("turn", entry.get("turn") or i)
+        entry["screenshot"] = f"browser_screenshots/{safe}/{filename}"
+        logs.append(entry)
+    return logs
+
+
+def _browser_output(*, qid: str, query: dict, run: dict | None = None, page_state_logs: list[dict] | None = None) -> dict:
     run = run or {}
     actions = SAMPLE_ACTIONS.get(qid, [])
+    logs = page_state_logs or actions
     path = run.get("path", "a11y" if qid in {"B3", "COMP"} else "extract")
     turns = run.get("turns", len(actions) if path in ("a11y", "vision") else 0)
     content = COMP_EXTRACTED if qid == "COMP" else f"[reference run {qid}]"
@@ -73,8 +100,8 @@ def _browser_output(*, qid: str, query: dict, run: dict | None = None) -> dict:
         "path": path,
         "turns": turns,
         "content": content,
-        "actions": actions,
-        "page_state_logs": actions,
+        "actions": logs,
+        "page_state_logs": logs,
         "final_url": f"{HF_URL}?pipeline_tag=text-generation&library=transformers&sort=likes"
         if qid == "COMP"
         else URLS[qid],
@@ -106,7 +133,9 @@ def seed_layer_session(*, qid: str, run: dict, query: dict) -> str:
     )
     g.extend_from(p, plan)
     browser_id = next(n for n, d in g.dg.nodes(data=True) if d.get("skill") == "browser")
-    out = _browser_output(qid=qid, query=query, run=run)
+    actions = SAMPLE_ACTIONS.get(qid, [])
+    logs = _seed_page_state_logs(store, browser_id, actions)
+    out = _browser_output(qid=qid, query=query, run=run, page_state_logs=logs)
     elapsed = float(out["elapsed_s"])
 
     store.save_graph(g.dg)
@@ -187,7 +216,11 @@ def seed_comp_session(query: dict) -> str:
     if dist_id:
         g.splice_critics_on_outgoing_edges([dist_id])
 
-    browser_out = _browser_output(qid="COMP", query=query)
+    browser_out = _browser_output(
+        qid="COMP",
+        query=query,
+        page_state_logs=_seed_page_state_logs(store, browser_id, SAMPLE_ACTIONS.get("COMP", [])),
+    )
     dist_out = json.dumps({"text": COMP_EXTRACTED, "models": 3})
     fmt_out = json.dumps({"text": COMP_TABLE})
 

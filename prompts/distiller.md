@@ -11,6 +11,7 @@ For browser comparison tasks, output JSON with:
 - `rows` — array of row objects; each key should match a column from the USER QUERY (snake_case)
 
 Use the column list and row count from the USER QUERY. Do not invent values missing upstream.
-(title, summary, key_facts).
+If a field is absent from upstream text, use null or the string "not listed" — never fill gaps
+with assumed product categories (open-source, SaaS, local-first, etc.).
 
 No markdown fences — JSON only.

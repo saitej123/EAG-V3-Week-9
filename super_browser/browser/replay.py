@@ -23,8 +23,7 @@ def browser_replay_payload(output: dict[str, Any] | None) -> dict[str, Any]:
     """Compact evidence block for UI / formatter (path, turns, actions, final URL)."""
     if not isinstance(output, dict):
         return {"available": False}
-    actions = output.get("actions") or []
-    page_states = output.get("page_state_logs") or actions
+    page_states = output.get("page_state_logs") or output.get("actions") or []
     return {
         "available": True,
         "path": output.get("path"),
@@ -35,7 +34,7 @@ def browser_replay_payload(output: dict[str, Any] | None) -> dict[str, Any]:
         "input_tokens": output.get("input_tokens", 0),
         "output_tokens": output.get("output_tokens", 0),
         "cost_usd": output.get("cost_usd", 0.0),
-        "actions": actions,
+        "actions": output.get("actions") or page_states,
         "page_state_logs": page_states,
         "content_preview": (output.get("content") or "")[:500],
     }
@@ -124,15 +123,51 @@ def _format_action_line(action: Any) -> str:
     return str(action)
 
 
+def _format_page_state_section(
+    logs: list[Any],
+    *,
+    session_id: str = "",
+) -> tuple[str, list[dict[str, str]]]:
+    """Build section-5 body plus screenshot metadata for the replay UI."""
+    from urllib.parse import quote
+
+    lines: list[str] = []
+    shots: list[dict[str, str]] = []
+    for entry in logs:
+        line = _format_action_line(entry)
+        lines.append(line)
+        if isinstance(entry, dict):
+            rel = str(entry.get("screenshot") or "").strip()
+            if rel and session_id:
+                shots.append(
+                    {
+                        "path": rel,
+                        "caption": line,
+                        "url": (
+                            f"/api/dag/browser-screenshot?session_id={quote(session_id)}"
+                            f"&path={quote(rel)}"
+                        ),
+                    }
+                )
+    body = "\n".join(lines) if lines else "(no page states logged)"
+    if not shots and lines:
+        body += "\n\n(no screenshot files — action log only)"
+    elif shots:
+        body += f"\n\n({len(shots)} screenshot(s) attached below)"
+    return body, shots
+
+
 def format_replay_sections(report: dict[str, Any]) -> list[dict[str, Any]]:
     """Eight numbered replay sections for the browser replay viewer."""
+    session_id = str(report.get("session_id") or "")
     run = (report.get("browser_runs") or [{}])[0] if report.get("browser_runs") else {}
     dag = report.get("planner_dag") or {}
     cost = report.get("cost_summary") or {}
-    actions = run.get("page_state_logs") or run.get("actions") or []
-    action_lines = [_format_action_line(a) for a in actions]
+    logs = run.get("page_state_logs") or run.get("actions") or []
+    action_lines = [_format_action_line(a) for a in logs]
     extracted = run.get("extracted_data") or report.get("extracted_data")
     comparison = report.get("comparison_table") or ""
+    page_state_body, screenshots = _format_page_state_section(logs, session_id=session_id)
 
     cost_line = (
         f"turns={cost.get('total_turns', run.get('turns', 0))} · "
@@ -173,7 +208,9 @@ def format_replay_sections(report: dict[str, Any]) -> list[dict[str, Any]]:
         {
             "n": 5,
             "title": "Screenshots or page-state logs",
-            "body": actions_body if action_lines else "(screenshots not persisted — action log only)",
+            "body": page_state_body,
+            "screenshots": screenshots,
+            "count": len(screenshots) or len(action_lines),
         },
         {"n": 6, "title": "Extracted data", "body": str(extracted or run.get("content_preview") or "(none)")},
         {"n": 7, "title": "Final comparison table", "body": comparison or "(formatter output pending)"},
@@ -227,11 +264,13 @@ def build_browser_replay_report(session_id: str, *, node_id: str | None = None) 
         payload = browser_replay_payload(out)
         if not payload.get("available"):
             continue
+        page_logs = out.get("page_state_logs") or payload.get("page_state_logs") or payload.get("actions") or []
         browser_runs.append(
             {
                 "node_id": nid,
                 "label": (data.get("metadata") or {}).get("label") or nid,
                 **payload,
+                "page_state_logs": page_logs,
                 "extracted_data": out.get("content"),
                 "status": st.status.value if st and hasattr(st.status, "value") else None,
             }

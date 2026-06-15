@@ -7,7 +7,7 @@ from typing import Any
 
 from loguru import logger
 
-from ..vision_api import vision_analyze
+from ..vision_api import vision_analyze, vision_extract_prompt
 from .dom import collect_clickables, page_device_pixel_ratio
 from .highlight import dedupe_clickables, draw_marks
 from .ledger import apply_cost_fields
@@ -49,33 +49,6 @@ VIEWPORT: {width}x{height} CSS pixels (origin top-left)
 
 Prefer JSON: {{"action":"click_coord"|"done","x":<css x>,"y":<css y>,"answer":"<when done>"}}
 Or list visible products/prices as plain text or a markdown table when the goal is already visible.
-"""
-
-
-def _vision_extract_prompt(*, goal: str, url: str) -> str:
-    from ..comparison_format import parse_comparison_spec
-
-    spec = parse_comparison_spec(f"{goal}\n{url}")
-    if spec.is_comparison and spec.columns:
-        cols = " | ".join(spec.columns)
-        return f"""Screenshot of a live web page.
-
-GOAL: {goal}
-URL: {url}
-
-The user wants a comparison table. Extract markdown with:
-1. Any shared **subject/title** and **location/context** named in the goal
-2. A markdown table with **{spec.row_count} rows** and columns: {cols}
-
-Use only text visible in the screenshot. Plain text or markdown is fine — JSON not required.
-"""
-    return f"""Screenshot of a live web page.
-
-GOAL: {goal}
-URL: {url}
-
-Read the screenshot and extract the fields needed to answer the goal.
-Return markdown (use a table when comparing items). Plain text is fine — JSON not required.
 """
 
 
@@ -171,7 +144,7 @@ async def _vision_extract_fallback(
     try:
         result = vision_analyze(
             image_bytes=screenshot,
-            prompt=_vision_extract_prompt(goal=goal, url=pg.url),
+            prompt=vision_extract_prompt(goal=goal, url=pg.url),
             label="browser-vision:extract",
             max_tokens=1024,
         )
@@ -233,6 +206,9 @@ async def layer_vision(url: str, goal: str, *, page=None) -> dict[str, Any] | No
             marks = dedupe_clickables(raw_clickables)
             screenshot = await pg.screenshot(type="png", full_page=False)
             last_screenshot = screenshot
+            from .page_capture import capture_png_bytes
+
+            capture_png_bytes(screenshot, turn=turn, note=f"vision_turn:{turn}", action="vision")
             mode = "som" if marks else "coordinate"
             last_mode = mode
 
@@ -256,6 +232,7 @@ async def layer_vision(url: str, goal: str, *, page=None) -> dict[str, Any] | No
                     image_bytes=image_bytes,
                     prompt=prompt,
                     label=f"browser-vision:t{turn}",
+                    max_tokens=2048,
                 )
             except RuntimeError as e:
                 logger.warning(f"[browser] vision unavailable: {e}")

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import re
+import socket
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar
@@ -15,10 +17,43 @@ from .llm_env import (
     _float_env,
     _int_env,
     gemini_models_ordered,
+    gemini_models_with_fallbacks,
     shared_gemini_client,
 )
 
 T = TypeVar("T")
+
+
+def is_transient_network_error(exc: BaseException) -> bool:
+    """True for DNS / connectivity failures where immediate retry rarely helps."""
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    if isinstance(exc, OSError):
+        code = getattr(exc, "errno", None)
+        if code in {
+            errno.ENETUNREACH,
+            errno.EHOSTUNREACH,
+            errno.ECONNREFUSED,
+            errno.ETIMEDOUT,
+            errno.ECONNRESET,
+        }:
+            return True
+        if code in (-2, -3):  # ENOENT / EAI_NONAME — common on WSL DNS blips
+            return True
+    msg = str(exc).lower()
+    needles = (
+        "name resolution",
+        "temporary failure",
+        "network is unreachable",
+        "connection refused",
+        "connection reset",
+        "failed to resolve",
+        "nodename nor servname",
+        "getaddrinfo failed",
+        "timed out",
+        "timeout",
+    )
+    return any(n in msg for n in needles)
 
 
 def llm_retry_max_attempts() -> int:
@@ -53,18 +88,23 @@ def call_with_retry(
     sleep_sec: float | None = None,
     backoff: float | None = None,
     on_retry: Callable[[int, Exception, float], None] | None = None,
+    fast_fail_on: Callable[[Exception], bool] | None = None,
 ) -> T:
     """Call ``fn`` up to ``max_attempts`` times with sleep between failures."""
     attempts = max_attempts if max_attempts is not None else llm_retry_max_attempts()
     wait = sleep_sec if sleep_sec is not None else llm_retry_sleep_seconds()
     factor = backoff if backoff is not None else llm_retry_backoff_factor()
     last: Exception | None = None
+    fail_fast = fast_fail_on or is_transient_network_error
 
     for attempt in range(1, attempts + 1):
         try:
             return fn()
         except Exception as e:
             last = e
+            if fail_fast(e):
+                logger.warning(f"[{label}] transient network error — skipping retries: {e}")
+                break
             if attempt >= attempts:
                 break
             if on_retry:
@@ -91,7 +131,7 @@ def generate_content_with_retry(
     if client is None:
         raise RuntimeError("Gemini client unavailable")
 
-    models = [model] + [m for m in gemini_models_ordered() if m != model]
+    models = gemini_models_with_fallbacks(model)
     last: Exception | None = None
 
     for model_id in models:
@@ -104,10 +144,14 @@ def generate_content_with_retry(
                 ),
                 label=f"{label}:{model_id}",
                 max_attempts=max_attempts,
+                fast_fail_on=is_transient_network_error,
             )
         except Exception as e:
             last = e
-            logger.warning(f"[{label}] model {model_id} exhausted retries: {e}")
+            if is_transient_network_error(e):
+                logger.warning(f"[{label}] model {model_id} network error — trying next model: {e}")
+            else:
+                logger.warning(f"[{label}] model {model_id} exhausted retries: {e}")
 
     raise RuntimeError(f"generate_content failed after retries: {last}")
 
@@ -200,7 +244,7 @@ def generate_structured_with_retry(
     attempts = max_attempts if max_attempts is not None else llm_retry_max_attempts()
     sleep = llm_retry_sleep_seconds()
     factor = llm_retry_backoff_factor()
-    models = [model] + [m for m in gemini_models_ordered() if m != model]
+    models = gemini_models_with_fallbacks(model)
     last: Exception | None = None
 
     for model_id in models:
