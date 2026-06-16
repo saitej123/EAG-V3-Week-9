@@ -233,3 +233,125 @@ def test_enrich_distiller_fills_codeium_gap(monkeypatch):
     codeium = next(r for r in out["rows"] if "codeium" in str(r.get("tool", "")).lower())
     assert "$20" in str(codeium.get("paid_starting_price", ""))
     assert codeium.get("free_tier_summary") and codeium["free_tier_summary"] != "—"
+
+
+def test_parse_comparison_table_from_vlm_markdown():
+    from super_browser.comparison_format import _parse_comparison_table_from_text
+
+    query = (
+        "Compare 3 laptops under ₹80,000 on Flipkart: return a table "
+        "(name, price, CPU/RAM, rating)."
+    )
+    spec = parse_comparison_spec(query)
+    md = (
+        "| Name | Price | CPU/RAM | Rating |\n"
+        "| --- | --- | --- | --- |\n"
+        "| HP 15 | ₹59,990 | i5/16GB | 4.3 |\n"
+        "| Lenovo IdeaPad | ₹54,999 | Ryzen5/8GB | 4.2 |"
+    )
+    rows = _parse_comparison_table_from_text(md, spec)
+    assert len(rows) == 2
+    assert "₹59,990" in str(rows[0].values())
+
+
+def test_enrich_browser_comparison_from_markdown():
+    from super_browser.comparison_format import enrich_browser_comparison_gaps
+
+    query = (
+        "Compare 3 laptops under ₹80,000 on Flipkart: return a table "
+        "(name, price, CPU/RAM, rating)."
+    )
+    browser = (
+        "| Name | Price | CPU/RAM | Rating |\n"
+        "| --- | --- | --- | --- |\n"
+        "| HP 15 | ₹59,990 | i5/16GB | 4.3 |\n"
+        "| Lenovo | ₹54,999 | Ryzen5/8GB | 4.2 |\n"
+        "| Acer | ₹49,999 | i3/8GB | 4.1 |"
+    )
+    out = enrich_browser_comparison_gaps(query, {"subject": "Laptops on Flipkart"}, browser_content=browser)
+    assert len(out["rows"]) == 3
+    assert "₹59,990" in str(out["rows"][0].values())
+
+
+def test_format_comparison_answer_uses_browser_vlm_table():
+    query = (
+        "Compare 3 laptops under ₹80,000 on Flipkart: return a table "
+        "(name, price, CPU/RAM, rating)."
+    )
+    browser_md = (
+        "| Name | Price | CPU/RAM | Rating |\n"
+        "| --- | --- | --- | --- |\n"
+        "| HP 15 | ₹59,990 | i5/16GB | 4.3 |\n"
+        "| Lenovo | ₹54,999 | Ryzen5/8GB | 4.2 |\n"
+        "| Acer | ₹49,999 | i3/8GB | 4.1 |"
+    )
+    table = format_comparison_answer(
+        query,
+        [
+            {"kind": "upstream", "skill": "browser", "output": {"content": browser_md}},
+            {"kind": "upstream", "skill": "distiller", "output": {"subject": "Laptops under ₹80,000 on Flipkart", "rows": []}},
+        ],
+    )
+    assert table
+    assert "₹59,990" in table
+    assert table.count("—") <= 4
+
+
+def test_format_comparison_answer_infers_columns_from_structured_rows_with_query_id():
+    table = format_comparison_answer(
+        "FORGE",
+        [
+            {
+                "kind": "upstream",
+                "skill": "distiller",
+                "output": {
+                    "subject": "CNC/VMC training institutes",
+                    "context": {"city": "Bangalore", "site": "UrbanPro"},
+                    "rows": [
+                        {
+                            "institute": "Satya Anand Kumar",
+                            "course_duration": "not listed",
+                            "approximate_fee": "not listed",
+                        },
+                        {
+                            "institute": "Sathya Narayanan",
+                            "course_duration": "not listed",
+                            "approximate_fee": "not listed",
+                        },
+                    ],
+                },
+            }
+        ],
+    )
+
+    assert table is not None
+    assert "Satya Anand Kumar" in table
+    assert "Central Manufacturing Technology Institute" not in table
+
+
+def test_format_comparison_answer_inferred_title_keeps_row_value():
+    table = format_comparison_answer(
+        "B2",
+        [
+            {
+                "kind": "upstream",
+                "skill": "distiller",
+                "output": {
+                    "subject": "Amazon laptop product",
+                    "context": {"site": "Amazon"},
+                    "rows": [
+                        {
+                            "title": "Gaming Laptop, 15.6 Inch FHD",
+                            "price": "not listed",
+                            "brand": "DUNHOO",
+                            "description": "16GB RAM and 512GB SSD laptop computer.",
+                        }
+                    ],
+                },
+            }
+        ],
+    )
+
+    assert table is not None
+    assert "Gaming Laptop, 15.6 Inch FHD" in table
+    assert "| Amazon laptop product | not listed |" not in table

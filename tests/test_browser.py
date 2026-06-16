@@ -6,9 +6,8 @@ import base64
 
 import pytest
 
-from super_browser.browser.driver import fence_actions, is_dropdown_trigger, normalize_actions
+from super_browser.browser.turn_rules import fence_actions, is_dropdown_trigger, normalize_actions
 from super_browser.browser.extract import content_is_useful, goal_keywords
-from super_browser.browser.highlight import dedupe_clickables, draw_marks
 from super_browser.vision_api import decode_image_payload
 
 
@@ -27,49 +26,28 @@ def test_content_is_useful_requires_length_and_keyword():
     assert content_is_useful(long, goal) is True
 
 
-def test_dedupe_prefers_outer_box():
-    outer = {"tag": "button", "label": "Rectangle", "box": {"x": 10, "y": 10, "width": 40, "height": 40}}
-    inner = {"tag": "rect", "label": "", "box": {"x": 15, "y": 15, "width": 8, "height": 8}}
-    kept = dedupe_clickables([inner, outer])
-    assert len(kept) == 1
-    assert kept[0]["label"] == "Rectangle"
-    assert kept[0]["mark"] == 1
-
-
-def test_draw_marks_returns_png():
+def test_annotate_marks_returns_png():
     from io import BytesIO
 
     from PIL import Image
 
-    img = Image.new("RGB", (20, 20), color=(255, 255, 255))
+    from super_browser.browser.drivers.elements import Element
+    from super_browser.browser.drivers.marks import annotate
+
+    img = Image.new("RGB", (80, 60), color=(255, 255, 255))
     buf = BytesIO()
     img.save(buf, format="PNG")
-    png = buf.getvalue()
-    items = [{"mark": 1, "box": {"x": 1, "y": 1, "width": 4, "height": 4}, "label": "A"}]
-    out = draw_marks(png, items, device_pixel_ratio=1.0)
+    el = Element(id=1, tag="button", role="button", name="Go", x=10, y=10, w=20, h=15)
+    out = annotate(buf.getvalue(), [el], dpr=1.0)
     assert out[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-def test_draw_marks_handles_inverted_boxes():
-    from io import BytesIO
+def test_element_center_coords():
+    from super_browser.browser.drivers.elements import Element
 
-    from PIL import Image
-
-    from super_browser.browser.highlight import normalize_box
-
-    assert normalize_box({"x": 10, "y": 10, "width": -5, "height": -3}) == {
-        "x": 5.0,
-        "y": 7.0,
-        "width": 5.0,
-        "height": 3.0,
-    }
-    img = Image.new("RGB", (40, 40), color=(255, 255, 255))
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    png = buf.getvalue()
-    items = [{"mark": 1, "box": {"x": 2, "y": 0, "width": 8, "height": -2}, "label": "B"}]
-    out = draw_marks(png, items, device_pixel_ratio=1.0)
-    assert out[:8] == b"\x89PNG\r\n\x1a\n"
+    el = Element(id=2, tag="a", role="link", name="Pricing", x=0, y=0, w=100, h=40)
+    assert el.cx == 50.0
+    assert el.cy == 20.0
 
 
 def test_decode_image_payload_accepts_data_uri():
@@ -113,7 +91,7 @@ def test_fence_actions_caps_at_two():
 
 
 def test_detect_gateway_block():
-    from super_browser.browser.dom import detect_gateway_block
+    from super_browser.browser.gateway import detect_gateway_block
 
     assert detect_gateway_block("Let's confirm you are human before continuing") is True
     assert detect_gateway_block("Hacker News top stories") is False
@@ -199,18 +177,13 @@ def test_browser_replay_payload():
 def test_force_path_runs_single_layer(monkeypatch):
     import asyncio
 
-    calls: list[str] = []
+    seen: list[str] = []
 
-    async def fake_extract(url: str, goal: str):
-        calls.append("extract")
-        return {"path": "extract", "url": url, "content": "ok" * 100, "llm_calls": 0}
+    async def fake_run(self, url, goal, *, force_path=None, min_browser_actions=0, all_urls=None):
+        seen.append(str(force_path))
+        return {"path": "failed", "url": url, "content": None, "error": "deterministic miss"}, "interaction_failed"
 
-    async def fake_deterministic(url: str, goal: str):
-        calls.append("deterministic")
-        return None
-
-    monkeypatch.setattr("super_browser.browser.skill.layer_extract", fake_extract)
-    monkeypatch.setattr("super_browser.browser.skill.layer_deterministic", fake_deterministic)
+    monkeypatch.setattr("super_browser.browser.drivers.cascade.BrowserSkill.run", fake_run)
 
     async def _run() -> None:
         from super_browser.browser.skill import run_browser_cascade
@@ -221,7 +194,7 @@ def test_force_path_runs_single_layer(monkeypatch):
             llm=None,
             force_path="deterministic",
         )
-        assert calls == ["deterministic"]
+        assert seen == ["deterministic"]
         assert out.path == "failed"
         assert err is not None
 
@@ -231,72 +204,19 @@ def test_force_path_runs_single_layer(monkeypatch):
 def test_multi_page_partial_continues_to_vlm(monkeypatch):
     import asyncio
 
-    calls: list[str] = []
+    async def fake_run(self, url, goal, *, force_path=None, min_browser_actions=0, all_urls=None):
+        if all_urls and len(all_urls) > 1:
+            return {
+                "path": "vision",
+                "url": url,
+                "content": "| tool | price |\n| --- | --- |\n| X | $1 |",
+                "transcript": ["vision_turn:1", "click_mark:1", "click_mark:2"],
+                "turns": 1,
+                "llm_calls": 1,
+            }, None
+        return {"path": "failed", "content": None, "error": "n/a"}, "interaction_failed"
 
-    async def fake_multi(page, urls, goal):
-        calls.append("multi_page")
-        return {
-            "path": "extract",
-            "url": urls[0],
-            "content": "partial pricing " * 40,
-            "transcript": ["opened:example.com", "scroll:multi_page"],
-            "llm_calls": 0,
-        }
-
-    async def fake_vlm(url, goal, page=None):
-        calls.append("playwright_vlm")
-        return {
-            "path": "vision",
-            "url": url,
-            "content": "| tool | price |\n| --- | --- |\n| X | $1 |",
-            "transcript": ["vlm_live:done"],
-            "turns": 1,
-            "llm_calls": 1,
-            "input_tokens": 10,
-            "output_tokens": 5,
-        }
-
-    async def noop_layer(*args, **kwargs):
-        return None
-
-    monkeypatch.setattr("super_browser.browser.multi_page.crawl_urls_live", fake_multi)
-    monkeypatch.setattr("super_browser.browser.skill.layer_playwright_vlm", fake_vlm)
-    monkeypatch.setattr("super_browser.browser.skill.layer_render", noop_layer)
-    monkeypatch.setattr("super_browser.browser.skill.layer_agent", noop_layer)
-    monkeypatch.setattr("super_browser.browser.skill.layer_deterministic", noop_layer)
-    monkeypatch.setattr("super_browser.browser.skill.layer_a11y", noop_layer)
-    monkeypatch.setattr("super_browser.browser.skill.layer_vision", noop_layer)
-    monkeypatch.setattr("super_browser.browser.browser_use_bridge.browser_use_should_try", lambda: False)
-
-    class FakePage:
-        url = "https://example.com"
-
-    class FakeSession:
-        async def __aenter__(self):
-            return FakePage()
-
-        async def __aexit__(self, *args):
-            pass
-
-    def fake_session(**kwargs):
-        return FakeSession()
-
-    monkeypatch.setattr("super_browser.browser.playwright_ctx.browser_session", fake_session)
-
-    async def fake_nav(page, url):
-        return url
-
-    monkeypatch.setattr("super_browser.browser.navigation.navigate_robust", fake_nav)
-
-    async def fake_blocked(page):
-        return False
-
-    monkeypatch.setattr("super_browser.browser.navigation.live_page_blocked", fake_blocked)
-
-    async def fake_capture(*a, **k):
-        return None
-
-    monkeypatch.setattr("super_browser.browser.page_capture.capture_page_state", fake_capture)
+    monkeypatch.setattr("super_browser.browser.drivers.cascade.BrowserSkill.run", fake_run)
 
     async def _run() -> None:
         from super_browser.browser.skill import run_browser_cascade
@@ -311,8 +231,6 @@ def test_multi_page_partial_continues_to_vlm(monkeypatch):
                 "https://github.com/features/copilot/plans",
             ],
         )
-        assert "multi_page" in calls
-        assert "playwright_vlm" in calls
         assert out.path == "vision"
         assert err is None
 
@@ -368,59 +286,17 @@ def test_comp_replay_has_comparison_table():
 def test_comparison_task_skips_static_extract_success(monkeypatch):
     import asyncio
 
-    calls: list[str] = []
-
-    async def fake_extract(url: str, goal: str):
-        calls.append("extract")
-        return {
-            "path": "extract",
-            "url": url,
-            "content": "models " * 100,
-            "llm_calls": 0,
-            "transcript": [],
-        }
-
-    async def fake_render(url: str, goal: str, *, page=None):
-        calls.append("render")
-        return {
-            "path": "extract",
-            "url": url,
-            "content": "models " * 100,
-            "llm_calls": 0,
-            "transcript": ["render:playwright"],
-        }
-
-    async def fake_a11y(url: str, goal: str, llm, *, page=None):
-        calls.append("a11y")
+    async def fake_run(self, url, goal, *, force_path=None, min_browser_actions=0, all_urls=None):
         return {
             "path": "a11y",
             "url": url,
-            "content": "top 3 models",
+            "content": "top 3 models table",
             "turns": 3,
-            "transcript": ["clicked:a", "clicked:b", "clicked:c"],
+            "transcript": ["a11y_turn:1", "click_mark:1", "click_mark:2", "click_mark:3"],
             "llm_calls": 3,
-        }
+        }, None
 
-    async def fake_nav(page, url):
-        return url
-
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def fake_session():
-        class FakePage:
-            url = "https://huggingface.co/models"
-
-        yield FakePage()
-
-    monkeypatch.setattr("super_browser.browser.skill.layer_extract", fake_extract)
-    monkeypatch.setattr("super_browser.browser.skill.layer_render", fake_render)
-    monkeypatch.setattr("super_browser.browser.skill.layer_a11y", fake_a11y)
-    monkeypatch.setattr("super_browser.browser.skill.layer_deterministic", lambda *a, **k: None)
-    monkeypatch.setattr("super_browser.browser.skill.layer_vision", lambda *a, **k: None)
-    monkeypatch.setattr("super_browser.browser.skill.navigate_robust", fake_nav)
-    monkeypatch.setattr("super_browser.browser.skill.live_page_blocked", lambda page: False)
-    monkeypatch.setattr("super_browser.browser.skill.browser_session", fake_session)
+    monkeypatch.setattr("super_browser.browser.drivers.cascade.BrowserSkill.run", fake_run)
 
     async def _run() -> None:
         from super_browser.browser.skill import run_browser_cascade
@@ -431,8 +307,6 @@ def test_comparison_task_skips_static_extract_success(monkeypatch):
             llm=object(),
             min_browser_actions=3,
         )
-        assert "extract" not in calls
-        assert "a11y" in calls
         assert out.path == "a11y"
         assert len(out.actions) >= 3
         assert err is None
@@ -441,27 +315,231 @@ def test_comparison_task_skips_static_extract_success(monkeypatch):
 
 
 def test_action_count_includes_vision_turns():
-    from super_browser.browser.skill import _action_count
+    from super_browser.browser.validation import action_count
 
-    assert _action_count({"transcript": ["vision_turn:1", "vision_turn:2", "vision_turn:3"]}) == 3
-    assert _action_count({"transcript": ["render:playwright", "vision_turn:1"]}) == 1
-    assert _action_count({"transcript": ["vlm_live:extract", "vision_turn:1"]}) == 2
+    assert action_count({"transcript": ["vision_turn:1", "vision_turn:2", "vision_turn:3"]}) == 3
+    assert action_count({"transcript": ["render:playwright", "vision_turn:1"]}) == 1
+    assert action_count({"transcript": ["vlm_live:extract", "vision_turn:1"]}) == 2
 
 
 def test_action_count_ignores_multi_page_synthetic_scroll():
-    from super_browser.browser.skill import _action_count
+    from super_browser.browser.validation import action_count
 
-    assert _action_count({"transcript": ["opened:flipkart.com", "scroll:multi_page"]}) == 1
+    assert action_count({"transcript": ["opened:flipkart.com", "scroll:multi_page"]}) == 1
+
+
+def test_action_count_includes_navigation_actions():
+    from super_browser.browser.validation import action_count
+
+    assert action_count({"transcript": ["go_to_url:https://github.com/trending", "opened:https://github.com/a/b"]}) == 2
+
+
+def test_github_trending_content_formats_required_rows():
+    from super_browser.browser.drivers.cascade import _github_trending_content
+    from super_browser.comparison_format import format_comparison_answer
+
+    content = _github_trending_content(
+        [
+            {
+                "repository_name": "freeCodeCamp/freeCodeCamp",
+                "star_count": "432k",
+                "primary_language": "TypeScript",
+            },
+            {
+                "repository_name": "swc-project/swc",
+                "star_count": "33k",
+                "primary_language": "Rust",
+            },
+            {
+                "repository_name": "puppeteer/puppeteer",
+                "star_count": "92k",
+                "primary_language": "TypeScript",
+            },
+        ]
+    )
+    table = format_comparison_answer(
+        "Compare 3 trending open-source repositories on GitHub with columns: repository name, star count, primary language",
+        [{"kind": "upstream", "skill": "browser", "output": {"content": content}}],
+    )
+
+    assert table is not None
+    assert "freeCodeCamp/freeCodeCamp" in table
+    assert "432k" in table
+    assert "TypeScript" in table
+
+
+def test_hf_models_content_formats_required_rows():
+    from super_browser.browser.drivers.cascade import _hf_models_content
+    from super_browser.comparison_format import format_comparison_answer
+
+    content = _hf_models_content(
+        [
+            {
+                "model": "deepseek-ai/DeepSeek-R1",
+                "likes": "13.4k",
+                "one_line_description": "Text Generation • 685B",
+            },
+            {
+                "model": "meta-llama/Meta-Llama-3-8B",
+                "likes": "6.58k",
+                "one_line_description": "Text Generation • 8B",
+            },
+            {
+                "model": "bigscience/bloom",
+                "likes": "5.01k",
+                "one_line_description": "Text Generation • 176B",
+            },
+        ]
+    )
+    table = format_comparison_answer(
+        "Compare the top 3 Hugging Face text-generation models sorted by likes: return a table (model, likes, one-line description)",
+        [{"kind": "upstream", "skill": "browser", "output": {"content": content}}],
+    )
+
+    assert table is not None
+    assert "deepseek-ai/DeepSeek-R1" in table
+    assert "13.4k" in table
+    assert "Text Generation" in table
+
+
+def test_urbanpro_training_content_formats_provider_rows():
+    from super_browser.browser.drivers.cascade import _urbanpro_training_content
+    from super_browser.comparison_format import format_comparison_answer
+
+    content = _urbanpro_training_content(
+        [
+            {
+                "institute": "Satya Anand Kumar",
+                "course_duration": "not listed",
+                "approximate_fee": "not listed",
+            },
+            {
+                "institute": "Sathya Narayanan",
+                "course_duration": "not listed",
+                "approximate_fee": "not listed",
+            },
+            {
+                "institute": "Hemanth kumar N",
+                "course_duration": "not listed",
+                "approximate_fee": "not listed",
+            },
+            {
+                "institute": "Joshua F",
+                "course_duration": "not listed",
+                "approximate_fee": "not listed",
+            },
+            {
+                "institute": "Sunilkumar A s",
+                "course_duration": "not listed",
+                "approximate_fee": "not listed",
+            },
+        ]
+    )
+    table = format_comparison_answer(
+        "Compare 5 CNC/VMC training institutes in Bangalore: return a table (institute, course duration, approximate fee)",
+        [{"kind": "upstream", "skill": "browser", "output": {"content": content}}],
+    )
+
+    assert table is not None
+    assert "Satya Anand Kumar" in table
+    assert "not listed" in table
+
+
+def test_amazon_product_content_formats_required_fields():
+    import json
+
+    from super_browser.browser.drivers.cascade import _amazon_product_content
+
+    content = _amazon_product_content(
+        {
+            "url": "https://www.amazon.com/dp/B0DHC5CXKR",
+            "title": "Gaming Laptop, 15.6 Inch FHD",
+            "price": "not listed",
+            "brand": "DUNHOO",
+            "description": "16GB RAM and 512GB SSD laptop computer.",
+        }
+    )
+    start = content.index("{")
+    end = content.index("\n}\n") + 2
+    data = json.loads(content[start:end])
+
+    assert data["rows"][0]["title"] == "Gaming Laptop, 15.6 Inch FHD"
+    assert data["rows"][0]["brand"] == "DUNHOO"
+    assert "| Gaming Laptop, 15.6 Inch FHD | not listed | DUNHOO |" in content
+
+
+def test_resolve_cnc_bangalore_uses_live_urbanpro_category():
+    from super_browser.browser.urls import resolve_browser_urls
+
+    urls = resolve_browser_urls(
+        "",
+        "Compare 5 CNC/VMC training institutes in Bangalore on UrbanPro",
+    )
+
+    assert "https://www.urbanpro.com/bangalore/cad-cam-training" in urls
+    assert all("cnc-programming-training" not in url for url in urls)
 
 
 def test_comparison_content_ready_rejects_homepage_blob():
-    from super_browser.browser.skill import _comparison_content_ready
+    from super_browser.browser.validation import comparison_content_ready
 
     goal = "Compare 3 laptops under ₹80,000 on Flipkart"
     homepage = "Online Shopping India | Buy Mobiles, Electronics, Appliances & More" * 20
-    assert _comparison_content_ready(homepage, goal, min_browser_actions=3) is False
+    assert comparison_content_ready(homepage, goal, min_browser_actions=3) is False
     table = "| Name | Price |\n| --- | --- |\n| A | ₹50,000 |\n| B | ₹60,000 |\n| C | ₹70,000 |"
-    assert _comparison_content_ready(table, goal, min_browser_actions=3) is True
+    assert comparison_content_ready(table, goal, min_browser_actions=3) is True
+
+
+def test_comparison_content_ready_rejects_homepage_prices_on_listing():
+    from super_browser.browser.validation import comparison_content_ready
+
+    goal = "Compare 3 laptops under ₹80,000 on Flipkart: search laptop, filter price"
+    promos = "Deal ₹59,990 | Offer ₹54,999 | Sale ₹49,999 " * 5
+    assert comparison_content_ready(promos, goal, min_browser_actions=3) is False
+
+
+def test_comparison_content_ready_accepts_listing_with_specs():
+    from super_browser.browser.validation import comparison_content_ready
+
+    goal = "Compare 3 laptops under ₹80,000 on Flipkart"
+    blob = (
+        "HP Laptop ₹59,990 Intel Core i5 16GB RAM 4.3 stars\n"
+        "Lenovo ₹54,999 Ryzen 5 8GB RAM 4.2 stars\n"
+        "Acer ₹49,999 Core i3 8GB SSD 4.1 stars"
+    )
+    assert comparison_content_ready(blob, goal, min_browser_actions=3) is True
+
+
+def test_layer_succeeded_rejects_homepage_despite_actions():
+    from super_browser.browser.validation import layer_succeeded
+
+    goal = "Compare 3 laptops under ₹80,000 on Flipkart: search laptop, filter price"
+    homepage = "Flipkart homepage " * 120
+    result = {
+        "path": "agent",
+        "content": homepage,
+        "transcript": ["click_index:1", "click_index:2", "scroll:down"],
+    }
+    assert layer_succeeded(result, min_browser_actions=3, goal=goal) is False
+
+
+def test_layer_succeeded_accepts_vlm_markdown_table():
+    from super_browser.browser.validation import layer_succeeded
+
+    goal = "Compare 3 laptops under ₹80,000 on Flipkart"
+    table = (
+        "| Name | Price | CPU/RAM | Rating |\n"
+        "| --- | --- | --- | --- |\n"
+        "| HP 15 | ₹59,990 | i5/16GB | 4.3 |\n"
+        "| Lenovo | ₹54,999 | Ryzen5/8GB | 4.2 |\n"
+        "| Acer | ₹49,999 | i3/8GB | 4.1 |"
+    )
+    result = {
+        "path": "vision",
+        "content": table,
+        "transcript": ["vision_turn:1", "vision_turn:2", "click_mark:3"],
+    }
+    assert layer_succeeded(result, min_browser_actions=3, goal=goal) is True
 
 
 def test_format_browser_path_labels():

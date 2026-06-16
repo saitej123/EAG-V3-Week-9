@@ -56,11 +56,12 @@ End-to-end pipeline (matches course flowchart):
 User goal
   → Planner
   → Researcher (optional — find candidate URLs; on browser failure)
-  → Browser skill — cheapest correct path:
+  → Browser skill (`super_browser/browser/drivers/`)
        extract (httpx + trafilatura)
-       → deterministic (CSS selectors)
-       → a11y (accessibility tree)
-       → vision (set-of-marks + VLM)
+       → render (Playwright DOM text)
+       → multi-page crawl (when multiple URLs resolved)
+       → a11y (A11yDriver — element legend + text LLM)
+       → vision (SetOfMarksDriver — marks + Gemini VLM)
        → gateway_blocked (recover or report)
   → Distiller
   → Critic (auto-spliced after distiller)
@@ -68,7 +69,11 @@ User goal
   → Replay viewer (8 sections)
 ```
 
+**LLM:** direct Gemini SDK via `drivers/gemini_client.py` — no gateway URL required.
+
 **Researcher vs Browser:** Researcher runs when the planner needs URL discovery, static fetches, or a browser-failure fallback. Browser runs when clicks, JS rendering, or ≥3 visible actions are required. The orchestrator may upgrade `researcher → browser` for comparison tasks (`flow.py`).
+
+Multi-URL tasks (STACK, FORGE) open up to `BROWSER_MAX_URLS` targets in one Playwright session before the driver loop.
 
 **Where crawl4ai is used (Researcher only — not in the Browser cascade):**
 
@@ -79,9 +84,7 @@ User goal
 | Browser Layer 1 extract | **No** | `httpx` + `trafilatura` (`extract.py`) |
 | Browser render / a11y / vision | **No** | Playwright + Pillow + Gemini VLM |
 
-**Implementation extras (same diagram, finer escalation inside Browser):** before deterministic/a11y/vision the cascade may try Playwright live-text **render**, fast **playwright_vlm**, and an indexed **agent** loop — all map to `BrowserOutput.path` values consumed by distiller/replay. Multi-URL tasks (STACK, FORGE) open up to `BROWSER_MAX_URLS` targets in one Playwright session.
-
-**Not in the course diagram:** [browser-use](https://github.com/browser-use/browser-use) is an optional bridge (`browser_use_bridge.py`), **off by default** (`BROWSER_USE_ENABLED=0`). The shipped path is **Playwright + Pillow + httpx + trafilatura** only.
+**Implementation:** Playwright live-text **render** and multi-page crawl run before **a11y → vision** drivers. Multi-URL tasks (STACK, FORGE) open up to `BROWSER_MAX_URLS` targets in one Playwright session.
 
 New behaviour plugs in via `agent_config.yaml` + `super_browser/browser/` only.
 
@@ -90,9 +93,10 @@ New behaviour plugs in via `agent_config.yaml` + `super_browser/browser/` only.
 | Library | Role in Browser |
 |---------|-----------------|
 | **httpx** | Layer 1 static fetch |
-| **trafilatura** | HTML → markdown extract |
+| **trafilatura** + **lxml** + **lxml-html-clean** | HTML → markdown extract |
 | **Playwright** | Render, a11y, vision, multi-URL navigation |
-| **Pillow** | Set-of-marks boxes on screenshots (`highlight.py`) |
+| **Pillow** | Set-of-marks boxes on screenshots (`drivers/marks.py`) |
+| **google-genai** | A11y text LLM + vision VLM (direct SDK) |
 
 ### `force_path` (opt-in)
 
@@ -100,17 +104,16 @@ Natural cascade is the default. Set `force_path` in browser metadata only to (1)
 
 ### Driver layout
 
-Shared turn rules and action execution: `driver.py`. **A11y** and **vision** layers differ only in how they decide the next action (tree + text LLM vs marks + VLM). Experimental driver core was ported with that split preserved. See [`VALIDATION.md`](VALIDATION.md) §3.
+`super_browser/browser/drivers/interaction.py` — **A11yDriver** and **SetOfMarksDriver**. Element enumeration: `drivers/elements.py`. Mark drawing: `drivers/marks.py`. Gemini: `drivers/gemini_client.py`.
 
-## Four-layer cascade (BrowserOutput.path)
+## Cascade paths (BrowserOutput.path)
 
 | Path | Mechanism | LLM cost |
 |------|-----------|----------|
 | `extract` | httpx + trafilatura; Playwright render when static fetch is thin | $0 |
-| `deterministic` | Playwright + CSS selectors | $0 |
-| `a11y` | Playwright + accessibility tree + text LLM | Low |
-| `vision` | Playwright + set-of-marks + VLM (`playwright_vlm` fast path, then full marks) | Per screenshot |
-| `agent` | Indexed clickables + text LLM loop (implementation layer between render and deterministic) | Low |
+| `deterministic` | Legacy CSS selectors (force_path demo only) | $0 |
+| `a11y` | A11yDriver — enumerated elements + text LLM | Low |
+| `vision` | SetOfMarksDriver — screenshot + marks + Gemini VLM | Per screenshot |
 | `gateway_blocked` | Live captcha / bot wall — orchestrator queues Researcher fallback or reports | $0 |
 | `failed` | All layers exhausted | — |
 
@@ -135,19 +138,26 @@ uv run python scripts/browser/seed_browser_sessions.py
 
 ```
 super_browser/browser/
-  skill.py          cascade entry
-  extract.py        Layer 1
+  skill.py              public API (run_browser_cascade)
+  output.py             BrowserOutput builder
+  validation.py         layer success + action counting
+  gateway.py            captcha / bot-wall detection
+  turn_rules.py         action fencing (max 2/turn)
+  extract.py            Layer 1 static fetch
   playwright_render.py  JS render fallback
-  deterministic.py  Layer 2a
-  a11y.py           Layer 2b
-  vision.py         Layer 3
-  navigation.py     robust goto + fallbacks
-  driver.py         turn rules
-  dom.py            clickables + gateway detect
-  highlight.py      set-of-marks dedupe + draw
-  ledger.py         token/cost fields
-  browser_use_bridge.py  optional browser-use Agent (runs before local cascade)
-  replay.py         replay report + payload
+  multi_page.py         multi-URL crawl
+  navigation.py         robust goto + fallbacks
+  page_capture.py       screenshots + replay logs
+  playwright_ctx.py     Chromium session helpers
+  ledger.py             token/cost fields
+  replay.py             replay report + payload
+  urls.py               URL resolution for assignments
+  drivers/
+    cascade.py          extract → render → a11y → vision
+    interaction.py      A11yDriver + SetOfMarksDriver
+    elements.py         interactive element enumeration
+    marks.py            set-of-marks (Pillow)
+    gemini_client.py    direct Gemini SDK
 scripts/browser/
   analyze_browser_session.py
   export_browser_replay.py

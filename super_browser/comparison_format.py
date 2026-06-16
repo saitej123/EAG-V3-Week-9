@@ -518,6 +518,157 @@ def _parse_training_table_from_text(text: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _parse_comparison_table_from_text(text: str, spec: ComparisonSpec) -> list[dict[str, Any]]:
+    """Map markdown pipe tables in browser/VLM output to distiller row dicts."""
+    lines = [ln.strip() for ln in (text or "").splitlines() if "|" in ln]
+    if len(lines) < 2:
+        return []
+
+    header_cells = [c.strip() for c in lines[0].strip("|").split("|")]
+    data_lines = [
+        ln
+        for ln in lines[1:]
+        if ln.strip() and not re.match(r"^\|?\s*[-:| ]+\s*\|?\s*$", ln.strip())
+    ]
+    if not data_lines:
+        return []
+
+    col_keys = list(spec.column_keys) or [_to_snake(c) for c in spec.columns]
+    rows: list[dict[str, Any]] = []
+    for line in data_lines[: spec.row_count + 2]:
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        row: dict[str, Any] = {}
+        for idx, key in enumerate(col_keys):
+            if idx < len(cells):
+                row[key] = cells[idx]
+            elif idx < len(header_cells):
+                row[key] = cells[-1] if cells else ""
+        if any(str(v).strip() and str(v).strip() not in {"—", "-"} for v in row.values()):
+            rows.append(row)
+    return rows[: spec.row_count]
+
+
+def _row_has_comparison_fields(row: dict[str, Any], spec: ComparisonSpec) -> bool:
+    empty = {"", "—", "-", "not listed", "n/a", "null", "none"}
+    hits = 0
+    for key in spec.column_keys:
+        val = str(_row_value(row, key) or "").strip().lower()
+        if val and val not in empty:
+            hits += 1
+    return hits >= max(1, min(2, len(spec.column_keys)))
+
+
+def _gemini_extract_comparison_rows(
+    user_query: str,
+    browser_content: str,
+    spec: ComparisonSpec,
+) -> list[dict[str, Any]]:
+    """Structured GenAI pass over VLM/browser text when distiller rows are empty."""
+    from loguru import logger
+
+    from .llm_env import gemini_models_ordered, shared_gemini_client
+    from .llm_retry import generate_content_with_retry, loads_json_lenient
+
+    client = shared_gemini_client()
+    blob = (browser_content or "").strip()
+    if client is None or len(blob) < 40:
+        return []
+
+    from google.genai import types
+
+    cols = ", ".join(spec.columns or spec.column_keys)
+    keys = ", ".join(spec.column_keys or spec.columns)
+    first_key = spec.column_keys[0] if spec.column_keys else "name"
+    prompt = f"""You are extracting a product comparison from browser automation output.
+
+USER QUERY:
+{user_query}
+
+BROWSER / VLM CAPTURE (use ONLY facts present here — do not invent):
+{blob[:16000]}
+
+Return ONLY valid JSON:
+{{
+  "subject": "<short title from query or page>",
+  "context": {{"site": "<marketplace if visible>"}},
+  "rows": [
+    {{"{first_key}": "...", ...}}
+  ]
+}}
+
+Requirements:
+- rows: up to {spec.row_count} objects
+- each row keys: {keys}
+- columns requested: {cols}
+- omit rows when no product facts are visible in BROWSER / VLM CAPTURE
+"""
+    try:
+        response = generate_content_with_retry(
+            model=gemini_models_ordered()[0],
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.1, max_output_tokens=2048),
+            label="comparison-gemini-extract",
+        )
+        raw = (getattr(response, "text", None) or "").strip()
+        data = loads_json_lenient(raw)
+        if not isinstance(data, dict):
+            return []
+        rows = _extract_rows(data)
+        if rows:
+            logger.info(f"[comparison] gemini extracted {len(rows)} row(s) from browser capture")
+        return rows[: spec.row_count]
+    except Exception as e:
+        logger.warning(f"[comparison] gemini row extract failed: {e}")
+        return []
+
+
+def enrich_browser_comparison_gaps(
+    user_query: str,
+    distiller: dict[str, Any],
+    *,
+    browser_content: str = "",
+) -> dict[str, Any]:
+    """Parse VLM markdown tables, then Gemini JSON extract, when distiller rows are sparse."""
+    spec = parse_comparison_spec(user_query)
+    if not spec.is_comparison:
+        return distiller
+
+    rows = _extract_rows(distiller, spec=spec, browser_content=browser_content)
+    if len(rows) >= spec.row_count and all(_row_has_comparison_fields(r, spec) for r in rows[: spec.row_count]):
+        merged = dict(distiller)
+        merged["rows"] = rows
+        if "items" in merged:
+            merged["items"] = rows
+        return merged
+
+    merged = dict(distiller)
+    if browser_content and "|" in browser_content:
+        parsed = _parse_comparison_table_from_text(browser_content, spec)
+        if parsed:
+            merged["rows"] = parsed
+            if "items" in merged:
+                merged["items"] = parsed
+            rows = parsed
+
+    if len(rows) >= spec.row_count and all(_row_has_comparison_fields(r, spec) for r in rows[: spec.row_count]):
+        return merged
+
+    source = browser_content or str(distiller.get("text") or distiller.get("content") or "")
+    if not source.strip():
+        return merged
+
+    gemini_rows = _gemini_extract_comparison_rows(user_query, source, spec)
+    if not gemini_rows:
+        return merged
+
+    merged["rows"] = gemini_rows
+    if "items" in merged:
+        merged["items"] = gemini_rows
+    return merged
+
+
 def enrich_distiller_pricing_gaps(user_query: str, distiller: dict[str, Any]) -> dict[str, Any]:
     """Ensure all named products have rows filled from official pricing pages."""
     if not _is_pricing_comparison(user_query):
@@ -721,7 +872,12 @@ def _cell(value: Any) -> str:
     return text.replace("|", "\\|") or "—"
 
 
-def _extract_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
+def _extract_rows(
+    data: dict[str, Any],
+    *,
+    spec: ComparisonSpec | None = None,
+    browser_content: str = "",
+) -> list[dict[str, Any]]:
     for key in _ROW_ARRAY_KEYS:
         raw = data.get(key)
         if isinstance(raw, str):
@@ -734,6 +890,11 @@ def _extract_rows(data: dict[str, Any]) -> list[dict[str, Any]]:
     for value in data.values():
         if isinstance(value, list) and value and isinstance(value[0], dict):
             return value
+    text_blob = str(data.get("text") or data.get("content") or browser_content or "")
+    if spec and "|" in text_blob:
+        parsed = _parse_comparison_table_from_text(text_blob, spec)
+        if parsed:
+            return parsed
     return []
 
 
@@ -817,7 +978,7 @@ def format_comparison_table(
     if not spec.is_comparison:
         return None
 
-    rows = _extract_rows(data)
+    rows = _extract_rows(data, spec=spec, browser_content=browser_content)
     subject = _subject_value(data, browser_content)
     columns = list(spec.columns)
     keys = list(spec.column_keys)
@@ -865,9 +1026,6 @@ def format_comparison_answer(
 ) -> str | None:
     """Build a markdown comparison table from upstream distiller/browser output."""
     spec = parse_comparison_spec(user_query)
-    if not spec.is_comparison:
-        return None
-
     distiller: dict[str, Any] = {}
     browser_content = ""
     for item in resolved_inputs:
@@ -881,8 +1039,25 @@ def format_comparison_answer(
             browser_content = str(out.get("content") or out.get("text") or "")
 
     if not distiller and browser_content:
-        distiller = {"text": browser_content, "rows": _extract_rows({"text": browser_content})}
+        distiller = {
+            "text": browser_content,
+            "rows": _extract_rows({"text": browser_content}, spec=spec, browser_content=browser_content),
+        }
 
+    if not spec.is_comparison:
+        rows = _extract_rows(distiller, browser_content=browser_content)
+        if not rows:
+            return None
+        columns, keys = _infer_columns_from_rows(rows)
+        spec = ComparisonSpec(
+            is_comparison=True,
+            row_count=len(rows),
+            columns=columns,
+            column_keys=keys,
+            subject_column=None,
+        )
+
+    distiller = enrich_browser_comparison_gaps(user_query, distiller, browser_content=browser_content)
     distiller = enrich_distiller_pricing_gaps(user_query, distiller)
     distiller = enrich_training_institute_gaps(user_query, distiller)
     distiller = enrich_doc_library_gaps(user_query, distiller)

@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 import trafilatura
 from loguru import logger
 
-from .dom import detect_gateway_block, detect_live_gateway_block
+from .gateway import detect_gateway_block, detect_live_gateway_block
 from .extract import content_is_useful
 from .playwright_ctx import PLAYWRIGHT_PROXY_HINT, is_playwright_proxy_error
 

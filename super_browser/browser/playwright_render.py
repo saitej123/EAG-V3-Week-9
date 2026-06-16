@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from loguru import logger
 
-from .a11y import _initial_url
+from .urls import initial_browser_url
 from .extract import content_is_useful
 from .navigation import (
     dismiss_cookie_banners,
@@ -28,7 +28,7 @@ async def layer_render(
 ) -> dict[str, Any] | None:
     """Extract from JS-rendered DOM — same ``path=extract``, escalates on failure."""
     started = time.time()
-    target = _initial_url(url, goal)
+    target = initial_browser_url(url, goal)
 
     async def _on_page(pg) -> dict[str, Any] | None:
         try:

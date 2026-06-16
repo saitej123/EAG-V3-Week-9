@@ -214,12 +214,17 @@ def resolve_inputs(
             if nid and nid in graph_nodes:
                 upstream = graph_nodes[nid].get("result")
                 if isinstance(upstream, AgentResult):
+                    out_dict = upstream.output
+                    if isinstance(out_dict, dict):
+                        out_dict = dict(out_dict)
+                        out_dict.pop("page_state_logs", None)
+                    upstream_skill = upstream.agent_name or str(graph_nodes[nid].get("skill") or "")
                     out.append(
                         {
                             "id": inp,
                             "kind": "upstream",
-                            "skill": upstream.agent_name,
-                            "output": upstream.output,
+                            "skill": upstream_skill,
+                            "output": out_dict,
                         }
                     )
                 else:
@@ -245,14 +250,28 @@ def render_prompt(
     resolved: list[dict[str, Any]],
     failure_report: str | None = None,
     memory_hits: list[MemoryItem] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     parts = [skill.prompt_template().rstrip(), "", f"USER QUERY: {query}"]
+    if metadata:
+        parts += ["", "METADATA:", json.dumps(metadata, indent=2, default=str)]
     if failure_report:
         parts += ["", f"FAILURE:\n{failure_report}"]
     hits_block = format_memory_hits(memory_hits or [])
     if hits_block:
         parts += ["", f"MEMORY HITS ({len(memory_hits or [])} from FAISS):", hits_block]
-    parts += ["", "INPUTS:", json.dumps(resolved, indent=2, default=str)[:20_000]]
+    
+    # Truncate large string fields before dumping to avoid invalid JSON
+    safe_resolved = []
+    for r in resolved:
+        r_copy = dict(r)
+        if "text" in r_copy and isinstance(r_copy["text"], str) and len(r_copy["text"]) > 15000:
+            r_copy["text"] = r_copy["text"][:15000] + "... [truncated]"
+        if "output" in r_copy and isinstance(r_copy["output"], str) and len(r_copy["output"]) > 15000:
+            r_copy["output"] = r_copy["output"][:15000] + "... [truncated]"
+        safe_resolved.append(r_copy)
+        
+    parts += ["", "INPUTS:", json.dumps(safe_resolved, indent=2, default=str)]
     return "\n".join(parts)
 
 
@@ -273,6 +292,94 @@ def parse_skill_json(text: str) -> dict[str, Any]:
                 return json.loads(t[start : end + 1])
             except json.JSONDecodeError:
                 pass
+    return {}
+
+
+def _first_json_object(text: str) -> dict[str, Any]:
+    """Return the first embedded JSON object from mixed prose/markdown text."""
+    decoder = json.JSONDecoder()
+    raw = text or ""
+    for idx, ch in enumerate(raw):
+        if ch != "{":
+            continue
+        try:
+            obj, _ = decoder.raw_decode(raw[idx:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return {}
+
+
+def _structured_comparison_from_browser(
+    query: str,
+    resolved: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Use browser-emitted structured comparison data before asking the LLM to re-distill it."""
+    from .comparison_format import _extract_rows, parse_comparison_spec
+
+    spec = parse_comparison_spec(query)
+    if not spec.is_comparison:
+        return {}
+    for item in resolved:
+        if item.get("kind") != "upstream" or item.get("skill") != "browser":
+            continue
+        out = item.get("output")
+        if isinstance(out, str):
+            out = parse_skill_json(out)
+        if not isinstance(out, dict):
+            continue
+        content = str(out.get("content") or "")
+        data = _first_json_object(content)
+        rows = data.get("rows") if isinstance(data, dict) else None
+        if isinstance(rows, list) and any(isinstance(row, dict) for row in rows):
+            return data
+        rows = _extract_rows({"text": content}, spec=spec, browser_content=content)
+        if rows:
+            return {
+                "subject": data.get("subject") or "Comparison",
+                "context": data.get("context") or {},
+                "rows": rows[: spec.row_count],
+            }
+    return {}
+
+
+def _structured_extraction_from_browser(
+    resolved: list[dict[str, Any]],
+    metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Use browser-emitted JSON for non-comparison distiller nodes."""
+    required_raw = metadata.get("required_keys") or []
+    if isinstance(required_raw, str):
+        required = [k.strip() for k in required_raw.split(",") if k.strip()]
+    elif isinstance(required_raw, list):
+        required = [str(k).strip() for k in required_raw if str(k).strip()]
+    else:
+        required = []
+    if not required:
+        return {}
+
+    for item in resolved:
+        if item.get("kind") != "upstream" or item.get("skill") != "browser":
+            continue
+        out = item.get("output")
+        if isinstance(out, str):
+            out = parse_skill_json(out)
+        if not isinstance(out, dict):
+            continue
+        content = str(out.get("content") or "")
+        data = _first_json_object(content)
+        if not data:
+            continue
+        candidates: list[dict[str, Any]] = []
+        if isinstance(data, dict):
+            candidates.append(data)
+            rows = data.get("rows")
+            if isinstance(rows, list):
+                candidates.extend(row for row in rows if isinstance(row, dict))
+        for candidate in candidates:
+            if all(k in candidate and candidate[k] not in (None, "") for k in required):
+                return {k: candidate.get(k) for k in required}
     return {}
 
 
@@ -472,11 +579,38 @@ async def run_skill(
         label_map=ctx.label_map,
         artifacts_get_bytes=ctx.artifacts.get_bytes,
     )
-    rendered = render_prompt(skill, query, resolved, failure_report, memory_hits=ctx.memory_hits)
+    meta = graph_nodes[node_id].get("metadata") or {}
+    rendered = render_prompt(skill, query, resolved, failure_report, memory_hits=ctx.memory_hits, metadata=meta)
     from .comparison_format import distiller_prompt_block, format_comparison_answer, parse_comparison_spec
 
     cmp_spec = parse_comparison_spec(query)
+    if skill.name == "distiller":
+        direct_extract = _structured_extraction_from_browser(resolved, meta)
+        if direct_extract:
+            return (
+                AgentResult(
+                    success=True,
+                    agent_name=skill.name,
+                    status="complete",
+                    output=direct_extract,
+                    elapsed_s=0.0,
+                ),
+                rendered,
+            )
+
     if cmp_spec.is_comparison and skill.name == "distiller":
+        direct = _structured_comparison_from_browser(query, resolved)
+        if direct:
+            return (
+                AgentResult(
+                    success=True,
+                    agent_name=skill.name,
+                    status="complete",
+                    output=direct,
+                    elapsed_s=0.0,
+                ),
+                rendered,
+            )
         rendered = f"{rendered}\n\n{distiller_prompt_block(query)}"
     started = time.time()
 
@@ -607,6 +741,12 @@ async def run_skill(
         fail_msg = str(parsed.get("error") or "browser cascade failed")
         if ok and browser_out.path == "failed":
             fail_msg = f"partial browser result ({fail_msg})"
+        logger.info(
+            f"[dag] browser node done path={browser_out.path} turns={browser_out.turns} "
+            f"actions={len(browser_out.actions or [])} content_chars="
+            f"{len(str(browser_out.content or ''))} wall={browser_out.elapsed_s}s "
+            f"llm_calls={browser_out.llm_calls} cost=${browser_out.cost_usd:.2f}"
+        )
         return (
             AgentResult(
                 success=ok,

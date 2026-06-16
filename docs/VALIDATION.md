@@ -59,7 +59,7 @@ On `gateway_blocked` / `browser_exhausted`, the orchestrator may queue **Researc
 
 **Original integration pass:** `detect_gateway_block` was kept in `browser/skill.py` instead of `browser/dom.py` because the pass was instructed to leave the driver core untouched. That was documented here as a small structural deviation.
 
-**Current tree:** the helper lives in **`browser/dom.py`** where it structurally belongs, imported by `extract.py`, `navigation.py`, and the cascade. Live-widget detection is `detect_live_gateway_block(page)` in the same module.
+**Current tree:** the helper lives in **`browser/gateway.py`**, imported by `extract.py`, `navigation.py`, and the cascade. Live-widget detection is `detect_live_gateway_block(page)` in the same module.
 
 No further move is required unless new gateway heuristics are added — extend `dom.py` only.
 
@@ -67,4 +67,4 @@ No further move is required unless new gateway heuristics are added — extend `
 
 ## 8. Optional browser-use bridge
 
-[`browser_use_bridge.py`](../super_browser/browser/browser_use_bridge.py) is off by default (`BROWSER_USE_ENABLED=0`). The shipped path is httpx + trafilatura + Playwright only.
+The shipped browser path is httpx + trafilatura + Playwright + direct Gemini (`drivers/`).

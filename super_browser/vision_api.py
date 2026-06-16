@@ -111,6 +111,13 @@ def vision_extract_prompt(*, goal: str, url: str) -> str:
     spec = parse_comparison_spec(f"{goal}\n{url}")
     if spec.is_comparison and spec.columns:
         cols = " | ".join(spec.columns)
+        listing_hint = ""
+        low = f"{goal}\n{url}".lower()
+        if "flipkart" in low or "search laptop" in low:
+            listing_hint = (
+                "\nIf the page is a store homepage, describe visible product cards with name, price, specs, rating. "
+                "If search results are visible, list the top matching products.\n"
+            )
         return f"""Screenshot of a live web page.
 
 GOAL: {goal}
@@ -118,7 +125,7 @@ URL: {url}
 
 Extract a markdown comparison table with **{spec.row_count} rows** and columns: {cols}
 Include any location/context named in the goal. Use only text visible in the screenshot.
-Plain markdown is fine — JSON not required.
+{listing_hint}Plain markdown is fine — JSON not required.
 """
     return f"""Screenshot of a live web page.
 

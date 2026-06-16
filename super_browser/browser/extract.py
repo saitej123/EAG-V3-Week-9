@@ -11,7 +11,7 @@ import httpx
 import trafilatura
 
 from ..search_providers import HTTP_FETCH_TIMEOUT_SEC, _HTTP_HEADERS
-from .dom import detect_gateway_block
+from .gateway import detect_gateway_block
 
 _MIN_CHARS = 200
 

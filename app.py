@@ -22,7 +22,7 @@ load_dotenv(BASE_DIR / ".env")
 
 _templates_dir = BASE_DIR / "templates"
 
-_RUNTIME_MODULES = ("faiss", "trafilatura", "httpx", "playwright", "yaml")
+_RUNTIME_MODULES = ("faiss", "trafilatura", "httpx", "playwright", "yaml", "lxml", "PIL")
 
 
 def _missing_runtime_modules() -> list[str]:

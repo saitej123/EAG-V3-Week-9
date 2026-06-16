@@ -7,6 +7,20 @@ from urllib.parse import urlparse
 
 from ..search_providers import extract_http_urls
 
+_HF_HOSTS = frozenset({"huggingface.co", "www.huggingface.co"})
+
+
+def initial_browser_url(url: str, goal: str) -> str:
+    """Normalize start URL for known assignment targets (e.g. HF models listing)."""
+    host = urlparse(url).netloc.lower()
+    goal_l = goal.lower()
+    if host in _HF_HOSTS or "huggingface.co" in url.lower():
+        if "/models" not in url:
+            return "https://huggingface.co/models"
+    if "huggingface" in goal_l and "models" in goal_l and "/models" not in url:
+        return "https://huggingface.co/models"
+    return url
+
 
 def canonical_browser_url(url: str) -> str:
     """Normalize http(s) URLs so trailing slashes and trivial variants dedupe."""
@@ -39,9 +53,9 @@ _KNOWN_PRICING_URLS: dict[str, str] = {
 
 # Listing / course-search portals for assignment queries without explicit URLs.
 _LISTING_PORTALS: dict[str, str] = {
-    "cnc bangalore": "https://www.urbanpro.com/bangalore/cnc-programming-training",
-    "vmc bangalore": "https://www.urbanpro.com/bangalore/cnc-programming-training",
-    "cnc vmc bangalore": "https://www.urbanpro.com/bangalore/cnc-programming-training",
+    "cnc bangalore": "https://www.urbanpro.com/bangalore/cad-cam-training",
+    "vmc bangalore": "https://www.urbanpro.com/bangalore/cad-cam-training",
+    "cnc vmc bangalore": "https://www.urbanpro.com/bangalore/cad-cam-training",
     "training bangalore": "https://www.urbanpro.com/bangalore/it-training",
 }
 

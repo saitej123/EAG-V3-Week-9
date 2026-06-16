@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="Images/app-icon.svg" alt="Super Browser Agent" width="96" height="96"/>
+  <img src="Images/app-icon.svg" alt="Super Browser Agent" width="88" height="88"/>
 </p>
 
 <h1 align="center">Super Browser Agent</h1>
 
 <p align="center">
-  <strong>Interactive comparison tasks · four-layer cascade · 8-section replay</strong>
+  <strong>Interactive comparison tasks · adapter-aware browser cascade · 8-section replay</strong>
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
   <a href="#replay">Replay</a>
 </p>
 
-A browser-first agent stack for **comparison tasks** that `web_search` and `fetch_url` cannot do: JS-rendered pages, filters, dropdowns, tabs, forms, and multi-step flows. The browser skill picks the cheapest correct cascade path; distiller + critic + formatter produce a comparison table; the replay viewer captures full evidence.
+A browser-first agent stack for **comparison tasks** that `web_search` and `fetch_url` cannot do: JS-rendered pages, filters, dropdowns, tabs, forms, and multi-step flows. The browser skill picks the cheapest correct path, tries reusable deterministic site/task adapters for known complex pages, then falls back to a11y/vision control. Distiller + critic + formatter produce structured output; the replay viewer captures full evidence.
 
 ## Quick start
 
@@ -49,15 +49,15 @@ uv run python scripts/browser/export_browser_replay.py dag_COMP_ref -o replay.md
 
 Comparison tasks require **≥3 visible browser actions** (search, filter, sort, open detail pages, etc.). Passive search snippets alone do not count.
 
-## Browser cascade
+## Browser Cascade
 
 Cheapest correct path wins:
 
 | Layer | When it wins |
 |-------|--------------|
 | **Extract** | Static HTML (httpx + trafilatura; Playwright render fallback) |
-| **Deterministic** | Known CSS selectors (e.g. product pages) |
-| **A11y** | Filters, dropdowns, sort (HF models) |
+| **Deterministic adapters** | Known complex task families with stable DOM evidence: Hugging Face models, Amazon product extraction, GitHub Trending, UrbanPro CAD/CAM listings |
+| **A11y** | Unknown interactive pages with usable accessibility/text controls |
 | **Vision** | Canvas-only / adversarial UI (**B4**) |
 | **Blocked** | Live captcha wall — replan or report |
 
@@ -69,10 +69,10 @@ Full catalog: `corpus/dag/ASSIGNMENT.json` · [`docs/BROWSER.md`](docs/BROWSER.m
 
 | Id | Comparison task |
 |----|-----------------|
-| **COMP** | Top 3 Hugging Face models by likes |
-| **DEAL** | 3 laptops under ₹80,000 |
+| **COMP** | Top 3 Hugging Face text-generation models by likes |
+| **DEAL** | 3 laptops under ₹80,000 on Flipkart |
 | **STACK** | 5 AI coding tools — free vs paid |
-| **FORGE** | 5 CNC/VMC training institutes — Bangalore |
+| **FORGE** | 5 CNC/VMC/CAD-CAM training providers — Bangalore |
 | **TICKET** | Bonus — GitHub trending repos |
 | **B1**–**B4** | Cascade lab (extract → deterministic → a11y → vision) |
 
@@ -102,24 +102,30 @@ User goal
     → Planner
     → Researcher (optional — find candidate URLs; browser-failure fallback)
     → Browser skill
-         Extract → Deterministic → A11y → Vision → Blocked
+         Extract → deterministic adapters → Render/multi-page → A11y → Vision → Blocked
     → Distiller
     → Critic (auto after distiller)
     → Formatter (comparison table)
     → Replay viewer
 ```
 
-**crawl4ai** is Researcher-only (`fetch_url`, `fetch_urls`, `web_search` fallback). Browser uses **httpx + trafilatura + Playwright + Pillow** — see [`docs/BROWSER.md`](docs/BROWSER.md) and [`docs/VALIDATION.md`](docs/VALIDATION.md).
+**crawl4ai** is Researcher-only (`fetch_url`, `fetch_urls`, `web_search` fallback). Browser uses **httpx + trafilatura + Playwright + Pillow** plus direct Gemini drivers — see [`docs/BROWSER.md`](docs/BROWSER.md) and [`docs/VALIDATION.md`](docs/VALIDATION.md).
 
 | Piece | Location |
 |-------|----------|
-| Browser cascade | `super_browser/browser/skill.py` |
+| Browser cascade + adapters | `super_browser/browser/skill.py` → `super_browser/browser/drivers/cascade.py` |
+| A11y/vision drivers | `super_browser/browser/drivers/interaction.py`, `elements.py`, `marks.py` |
 | Replay report | `super_browser/browser/replay.py` |
 | Skill catalogue | `agent_config.yaml` + `prompts/browser.md` |
 | Task corpus | `corpus/dag/ASSIGNMENT.json` |
+| UI shell + inline logo/chat icons | `templates/index.html` |
 
 ## Tests
 
 ```bash
 uv run pytest tests/test_browser.py tests/test_assignment_spec.py tests/test_dag_queries_api.py -q
+# Full check used for this refactor:
+uv run pytest
 ```
+
+Latest verification: **268 passed, 1 skipped**.

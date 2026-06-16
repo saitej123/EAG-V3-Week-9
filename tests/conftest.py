@@ -15,6 +15,17 @@ _REF_MARKER = ROOT / "state" / "sessions" / "dag_COMP_ref" / "graph.json"
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _ensure_playwright_runtime_ready() -> None:
+    """API tests must not 503 when Chromium is not installed in CI."""
+    try:
+        import app as app_mod
+
+        app_mod._runtime_env_detail = lambda **kwargs: None  # type: ignore[method-assign]
+    except Exception:
+        pass
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _ensure_browser_reference_sessions() -> None:
     """Seed dag_*_ref demos when missing (e.g. after scripts/clean.py)."""
     if _REF_MARKER.is_file():

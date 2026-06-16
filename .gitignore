@@ -15,7 +15,7 @@ sandbox_home/
 
 # Crawl4AI cache next to mcp_server.py / agent (regenerated)
 .crawl4ai/
-
+/Browser_Automation/
 # Exclude environment variables
 .env
 .env.*

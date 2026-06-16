@@ -183,6 +183,51 @@ def test_session_store_atomic_roundtrip(tmp_path, monkeypatch):
     assert (store.nodes_dir / "n_001.json").name == node_filename("n:1")
 
 
+def test_resolve_inputs_falls_back_to_graph_skill_when_agent_name_missing():
+    from super_browser.dag_schemas import AgentResult
+    from super_browser.skills import resolve_inputs
+
+    graph_nodes = {
+        "n:3": {
+            "skill": "distiller",
+            "result": AgentResult(
+                success=True,
+                agent_name="",
+                status="complete",
+                output={"rows": [{"institute": "Satya Anand Kumar"}]},
+            ),
+        }
+    }
+
+    resolved = resolve_inputs(["n:3"], graph_nodes, "FORGE")
+
+    assert resolved[0]["skill"] == "distiller"
+    assert resolved[0]["output"]["rows"][0]["institute"] == "Satya Anand Kumar"
+
+
+def test_structured_extraction_from_browser_uses_required_row_keys():
+    from super_browser.skills import _structured_extraction_from_browser
+
+    content = (
+        "Extracted data:\n"
+        '{"subject":"Amazon laptop product","rows":[{"title":"Gaming Laptop",'
+        '"price":"not listed","brand":"DUNHOO","description":"16GB RAM"}]}'
+    )
+    resolved = [{"kind": "upstream", "skill": "browser", "output": {"content": content}}]
+
+    direct = _structured_extraction_from_browser(
+        resolved,
+        {"required_keys": "title,price,brand,description"},
+    )
+
+    assert direct == {
+        "title": "Gaming Laptop",
+        "price": "not listed",
+        "brand": "DUNHOO",
+        "description": "16GB RAM",
+    }
+
+
 def test_prime_memory_read_uses_empty_history_and_top_k(monkeypatch):
     """Regression: memory.read(query, 12) passed int as history (Session8StartingCode-class bug)."""
     import asyncio

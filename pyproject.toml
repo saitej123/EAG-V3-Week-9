@@ -5,33 +5,44 @@ description = "Super Browser Agent — DAG orchestrator with four-layer browser 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "networkx",
-    "numpy",
-    "pyyaml",
-    "faiss-cpu",
+    # Browser cascade
+    "httpx",
+    "playwright>=1.47",
+    "pillow>=10.0",
+    "trafilatura>=1.12",
+    "lxml>=5.2",
+    "lxml-html-clean>=0.1",
+    # Agent / DAG
+    "networkx>=3.2",
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+    "pydantic>=2.13.4",
+    "python-dotenv",
+    "faiss-cpu>=1.8.0",
+    # Researcher
     "crawl4ai",
     "duckduckgo-search",
-    "fastapi",
+    "tavily-python",
+    # LLM
     "google-genai",
-    "httpx",
+    # MCP
+    "mcp[cli]",
+    # Web UI
+    "fastapi",
+    "uvicorn",
     "jinja2",
-    "loguru",
-    "mcp",
-    "pillow",
-    "playwright",
-    "pymupdf",
-    "pydantic",
-    "python-dotenv",
     "python-multipart",
     "sse-starlette",
-    "tavily-python",
-    "trafilatura",
-    "uvicorn",
+    "loguru",
+    # Documents
+    "pymupdf",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-asyncio",
+    "pyright>=1.1.410",
 ]
 browser-use = [
     "browser-use",
@@ -44,3 +55,6 @@ include = ["super_browser*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"

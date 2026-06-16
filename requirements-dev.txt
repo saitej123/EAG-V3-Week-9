@@ -1,2 +1,4 @@
 -r requirements.txt
 pytest
+pytest-asyncio
+pyright>=1.1.410

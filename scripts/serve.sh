@@ -17,7 +17,7 @@ fi
 # Fail fast before uvicorn — reload subprocess must use this same interpreter.
 "$VENV_PY" -c "
 import importlib
-for mod in ('trafilatura', 'httpx', 'playwright', 'yaml', 'faiss'):
+for mod in ('trafilatura', 'httpx', 'playwright', 'yaml', 'faiss', 'lxml', 'PIL'):
     importlib.import_module(mod)
 print('deps ok:', __import__('sys').executable)
 "

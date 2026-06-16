@@ -1,26 +1,41 @@
-# Super Browser Agent — runtime dependencies (unpinned)
-# Install: pip install -r requirements.txt && playwright install chromium
-# Prefer uv for this repo: uv sync
+# Super Browser Agent — runtime dependencies
+# Prefer: uv sync && ./scripts/serve.sh
+# Or: pip install -r requirements.txt && playwright install chromium
 
+# Browser cascade (extract → a11y → vision) — matches reference browser stack
+httpx
+playwright>=1.47
+pillow>=10.0
+trafilatura>=1.12
+lxml>=5.2
+lxml-html-clean>=0.1
+
+# Agent / DAG orchestrator
+networkx>=3.2
+numpy>=1.26
+pyyaml>=6.0
+pydantic>=2.13.4
+python-dotenv
+faiss-cpu>=1.8.0
+
+# Researcher (fetch_url, web_search — not browser cascade)
 crawl4ai
 duckduckgo-search
-faiss-cpu
-fastapi
-google-genai
-httpx
-jinja2
-loguru
-mcp
-networkx
-numpy
-pillow
-playwright
-pymupdf
-pydantic
-python-dotenv
-python-multipart
-pyyaml
-sse-starlette
 tavily-python
-trafilatura
+
+# LLM (direct Gemini SDK; gateway optional)
+google-genai
+
+# MCP tools
+mcp[cli]
+
+# Web UI
+fastapi
 uvicorn
+jinja2
+python-multipart
+sse-starlette
+loguru
+
+# Document tooling (PDF corpus / formatter)
+pymupdf
