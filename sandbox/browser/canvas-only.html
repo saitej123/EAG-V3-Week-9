@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Canvas Only Target</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: #fafafa;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+    }
+
+    canvas {
+      width: min(92vw, 720px);
+      height: auto;
+      border: 1px solid #e4e4e7;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 16px 45px rgb(15 23 42 / 0.08);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="target" width="720" height="460"></canvas>
+  <script>
+    const canvas = document.getElementById('target');
+    const ctx = canvas.getContext('2d');
+    const circle = { x: 512, y: 242, r: 54 };
+    window.__redCircleClicked = false;
+
+    function draw(clicked) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#18181b';
+      ctx.font = '700 24px Inter, system-ui, sans-serif';
+      ctx.fillText('Vision-only click target', 44, 70);
+      ctx.fillStyle = '#71717a';
+      ctx.font = '500 15px Inter, system-ui, sans-serif';
+      ctx.fillText('Click inside the red circle. The page exposes no buttons or links.', 44, 100);
+
+      ctx.strokeStyle = '#e4e4e7';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(44, 136, 632, 260);
+
+      ctx.beginPath();
+      ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2);
+      ctx.fillStyle = clicked ? '#22c55e' : '#ef4444';
+      ctx.fill();
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = clicked ? '#15803d' : '#991b1b';
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '800 18px Inter, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(clicked ? 'DONE' : 'CLICK', circle.x, circle.y);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    canvas.addEventListener('click', function (event) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (event.clientX - rect.left) * scaleX;
+      const y = (event.clientY - rect.top) * scaleY;
+      const hit = Math.hypot(x - circle.x, y - circle.y) <= circle.r;
+      if (hit) {
+        window.__redCircleClicked = true;
+        draw(true);
+      }
+    });
+
+    draw(false);
+  </script>
+</body>
+</html>

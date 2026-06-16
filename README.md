@@ -76,6 +76,19 @@ Full catalog: `corpus/dag/ASSIGNMENT.json` · [`docs/BROWSER.md`](docs/BROWSER.m
 | **TICKET** | Bonus — GitHub trending repos |
 | **B1**–**B4** | Cascade lab (extract → deterministic → a11y → vision) |
 
+### Demo screenshots
+
+| 1 | 2 |
+|---|---|
+| <img src="Images/1_a.png" alt="Demo screenshot 1 A" width="100%"/> | <img src="Images/1_b.png" alt="Demo screenshot 1 B" width="100%"/> |
+| <img src="Images/2_a.png" alt="Demo screenshot 2 A" width="100%"/> | <img src="Images/2_b.png" alt="Demo screenshot 2 B" width="100%"/> |
+| <img src="Images/3_a.png" alt="Demo screenshot 3 A" width="100%"/> | <img src="Images/3_c.png" alt="Demo screenshot 3 C" width="100%"/> |
+| <img src="Images/4_a.png" alt="Demo screenshot 4 A" width="100%"/> | <img src="Images/4_b.png" alt="Demo screenshot 4 B" width="100%"/> |
+| <img src="Images/5_a.png" alt="Demo screenshot 5 A" width="100%"/> | <img src="Images/5_b.png" alt="Demo screenshot 5 B" width="100%"/> |
+| <img src="Images/6_a.png" alt="Demo screenshot 6 A" width="100%"/> | <img src="Images/6_b.png" alt="Demo screenshot 6 B" width="100%"/> |
+| <img src="Images/7_a.png" alt="Demo screenshot 7 A" width="100%"/> | <img src="Images/7_b.png" alt="Demo screenshot 7 B" width="100%"/> |
+| <img src="Images/8_a.png" alt="Demo screenshot 8 A" width="100%"/> | <img src="Images/8_b.png" alt="Demo screenshot 8 B" width="100%"/> |
+
 ## Replay
 
 Eight-section report (Graph UI + export):

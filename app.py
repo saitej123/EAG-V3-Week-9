@@ -199,6 +199,13 @@ app.mount("/Images", StaticFiles(directory=str(BASE_DIR / "Images")), name="imag
 _static_dir = BASE_DIR / "static"
 if _static_dir.is_dir():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+_browser_sandbox_dir = BASE_DIR / "sandbox" / "browser"
+if _browser_sandbox_dir.is_dir():
+    app.mount(
+        "/sandbox/browser",
+        StaticFiles(directory=str(_browser_sandbox_dir)),
+        name="sandbox-browser",
+    )
 
 # Console: ANSI colors when tty. SSE/UI sink: plain text (no markup) for reliable browser rendering.
 _LOG_FORMAT = (

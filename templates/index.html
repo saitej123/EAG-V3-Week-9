@@ -942,13 +942,12 @@
             font-size: 0.6875rem;
             line-height: 1.45;
             background: #fafafa;
-            scroll-behavior: smooth;
+            scroll-behavior: auto;
         }
         .chat-stream-line {
             padding: 0.12rem 0;
             color: var(--muted-foreground);
             word-break: break-word;
-            animation: stream-line-in 0.22s ease-out;
         }
         .chat-stream-line.iter {
             color: #6366f1;
@@ -2137,6 +2136,9 @@
 
     let stopAgentInFlight = false;
     let serverHealthOk = true;
+    let pendingChatScrollFrame = null;
+    let pendingLogScrollFrame = null;
+    let lastDagGraphRenderSignature = '';
 
     function syncComposerControls() {
         const running = agentRunActive || serverAgentBusy;
@@ -2569,7 +2571,20 @@
 
     function scrollChatToBottom() {
         if (!chatMessages) return;
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        if (pendingChatScrollFrame) return;
+        pendingChatScrollFrame = requestAnimationFrame(function () {
+            pendingChatScrollFrame = null;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        });
+    }
+
+    function scrollLogsToBottom() {
+        if (!logsDiv) return;
+        if (pendingLogScrollFrame) return;
+        pendingLogScrollFrame = requestAnimationFrame(function () {
+            pendingLogScrollFrame = null;
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        });
     }
 
     function markdownToHtml(md) {
@@ -3204,7 +3219,7 @@
         }
 
         pollTick();
-        dagGraphPollTimer = setInterval(pollTick, live ? 700 : 2000);
+        dagGraphPollTimer = setInterval(pollTick, live ? 1250 : 2500);
     }
 
     function setDagGraphStatus(msg, isError) {
@@ -3312,6 +3327,20 @@
 
         ensureDagGraphCtrl();
         if (!dagGraphCtrl) return;
+        const renderSignature = JSON.stringify({
+            session_id: payload.session_id || activeDagSessionId || '',
+            run_complete: !!payload.run_complete,
+            node_count: payload.node_count || 0,
+            edge_count: payload.edge_count || 0,
+            status_counts: (payload.stats && payload.stats.status_counts) || {},
+            nodes: (payload.nodes || []).map(function (n) {
+                return [n.id, n.status, n.output_ref || '', n.error || ''];
+            }),
+        });
+        if (attempt === undefined && renderSignature === lastDagGraphRenderSignature) {
+            return;
+        }
+        lastDagGraphRenderSignature = renderSignature;
         dagGraphCtrl.render(payload);
         syncDagRunModeUI(payload);
         if (selectedDagNodeId) showDagNodeDetail(selectedDagNodeId);
@@ -3787,7 +3816,7 @@
             line.dataset.level = levelMatch[1].toLowerCase();
         }
         logsDiv.appendChild(line);
-        logsDiv.scrollTop = logsDiv.scrollHeight;
+        scrollLogsToBottom();
     }
 
     const SEND_BTN_HTML =
@@ -4112,7 +4141,7 @@
 
     autoResizeTextarea(queryInput);
 
-    // DAG demo queries: load query and auto-run
+    // DAG demo queries: task cards load the composer; welcome chips keep one-click demo behavior.
     document.addEventListener('click', function (e) {
         const btn = e.target.closest(
             '#chatWelcomeChips .demo-welcome-chip, #dagQueriesScroll .test-case-btn'
@@ -4120,13 +4149,11 @@
         if (!btn) return;
         const query = btn.getAttribute('data-query');
         if (!query) return;
-        pendingDagQueryId = btn.getAttribute('data-query-id') || null;
-        setMainView('chat');
-        queryInput.value = query;
-        autoResizeTextarea(queryInput);
-        updateComposerHint();
-        queryInput.focus();
-        startAgentRun();
+        const queryId = btn.getAttribute('data-query-id') || null;
+        const fromTaskSidebar = !!btn.closest('#dagQueriesScroll');
+        loadDagQueryIntoComposer(query, !fromTaskSidebar, queryId, {
+            keepTasksOpen: fromTaskSidebar,
+        });
     });
 
     if (dagBackChatBtn) {
@@ -4374,14 +4401,24 @@
         void openBrowserReplayForSession(activeDagSessionId);
     }
 
-    function loadDagQueryIntoComposer(query, autoRun, queryId) {
+    function loadDagQueryIntoComposer(query, autoRun, queryId, opts) {
+        opts = opts || {};
         if (!query) return;
         pendingDagQueryId = queryId || null;
-        setMainView('chat');
+        const keepTasksOpen = opts.keepTasksOpen || activeMainView === 'tasks';
+        setMainView(keepTasksOpen ? 'tasks' : 'chat');
         queryInput.value = query;
         autoResizeTextarea(queryInput);
         updateComposerHint();
-        queryInput.focus();
+        setFormHint(autoRun ? '' : 'Task loaded. Review it, then press Send.');
+        if (keepTasksOpen && intentCard) {
+            intentCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        try {
+            queryInput.focus({ preventScroll: true });
+        } catch (err) {
+            queryInput.focus();
+        }
         if (autoRun) startAgentRun();
     }
 

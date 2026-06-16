@@ -189,7 +189,7 @@
       "part": 1,
       "label": "B4",
       "title": "Red circle ritual — vision only",
-      "query": "Open sandbox/browser/canvas-only.html via browser. Click inside the red circle. Do not guess.",
+      "query": "Open http://127.0.0.1:8080/sandbox/browser/canvas-only.html via browser. Click inside the red circle. Do not guess.",
       "wall_clock_sec": 120,
       "expected_path": "vision",
       "expected_skills": ["planner", "browser", "formatter"],

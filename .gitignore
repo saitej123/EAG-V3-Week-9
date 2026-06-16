@@ -5,8 +5,10 @@ state/
 sandbox/*
 !sandbox/papers/
 !sandbox/rag_corpus/
+!sandbox/browser/
 !sandbox/papers/**
 !sandbox/rag_corpus/**
+!sandbox/browser/**
 # Large PDFs — download locally (scripts/download_research_papers.py) or use sidecars
 sandbox/**/*.pdf
 sandbox/research_papers/
