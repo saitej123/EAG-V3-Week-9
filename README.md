@@ -15,6 +15,10 @@
   <a href="#replay">Replay</a>
 </p>
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=Mw_K2m_V4sQ"><strong>Watch the YouTube demo</strong></a>
+</p>
+
 A browser-first agent stack for **comparison tasks** that `web_search` and `fetch_url` cannot do: JS-rendered pages, filters, dropdowns, tabs, forms, and multi-step flows. The UI now uses a clean shadcn-style zinc browser-agent mark: a minimal browser window, cursor, and small action spark. The browser skill picks the cheapest correct path, tries reusable deterministic site/task adapters for known complex pages, then falls back to a11y/vision control. Distiller + critic + formatter produce structured output; the replay viewer captures full evidence.
 
 ## Quick start
@@ -65,7 +69,7 @@ Optional upstream: [browser-use](https://github.com/browser-use/browser-use) —
 
 ## Demo queries
 
-Full catalog: `corpus/dag/ASSIGNMENT.json` · [`docs/BROWSER.md`](docs/BROWSER.md)
+Video walkthrough: [YouTube demo](https://www.youtube.com/watch?v=Mw_K2m_V4sQ) · Full catalog: `corpus/dag/ASSIGNMENT.json` · [`docs/BROWSER.md`](docs/BROWSER.md)
 
 | Id | Comparison task |
 |----|-----------------|

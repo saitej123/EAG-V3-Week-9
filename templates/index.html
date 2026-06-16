@@ -1107,6 +1107,10 @@
         .btn-shadcn:focus-visible {
             box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.12);
         }
+        [hidden],
+        .btn-shadcn[hidden] {
+            display: none !important;
+        }
         .btn-shadcn-primary {
             background: var(--primary);
             color: var(--primary-foreground);
@@ -1428,8 +1432,15 @@
         .dag-graph-run-actions .btn-row {
             display: flex;
             gap: 0.35rem;
+            min-width: 0;
         }
-        .dag-graph-run-actions .btn-row button { flex: 1; justify-content: center; }
+        .dag-graph-run-actions .btn-row button {
+            flex: 1 1 0;
+            justify-content: center;
+            min-height: 2.25rem;
+            min-width: 0;
+            white-space: nowrap;
+        }
         #dagGraphStopBtn {
             background: #fff;
             color: #b91c1c;
@@ -1437,9 +1448,9 @@
         }
         #dagGraphStopBtn:hover:not(:disabled) { background: #fef2f2; }
         .dag-node-detail-card { font-size: 0.6875rem; line-height: 1.4; color: #3f3f46; }
-        .dag-node-detail-card dl { margin: 0; display: grid; grid-template-columns: 4.5rem 1fr; gap: 0.2rem 0.5rem; }
+        .dag-node-detail-card dl { margin: 0; display: grid; grid-template-columns: 4.75rem minmax(0, 1fr); gap: 0.25rem 0.55rem; }
         .dag-node-detail-card dt { font-weight: 600; color: #71717a; margin: 0; }
-        .dag-node-detail-card dd { margin: 0; word-break: break-word; }
+        .dag-node-detail-card dd { margin: 0; min-width: 0; word-break: break-word; }
         .dag-node-status-pill {
             display: inline-block;
             padding: 0.1rem 0.45rem;
@@ -1477,15 +1488,18 @@
             flex-direction: column;
             border-left: 1px solid var(--border);
             background: #fff;
+            overflow-y: auto;
+            overflow-x: hidden;
         }
         .dag-graph-aside-section {
             padding: 0.65rem 0.75rem;
             border-bottom: 1px solid #f4f4f5;
             min-height: 0;
+            flex: 0 0 auto;
         }
         .dag-graph-aside-section.scroll {
-            flex: 1 1 auto;
-            overflow-y: auto;
+            flex: 0 0 auto;
+            overflow: visible;
         }
         .dag-graph-aside h3 {
             font-size: 0.625rem;
@@ -1501,6 +1515,7 @@
             gap: 0.35rem 0.5rem;
             font-size: 0.625rem;
             color: #52525b;
+            font-variant-numeric: tabular-nums;
         }
         .dag-graph-stats span {
             padding: 0.1rem 0.4rem;
@@ -1547,8 +1562,7 @@
             font-size: 0.625rem;
             line-height: 1.5;
             color: #3f3f46;
-            max-height: 22rem;
-            overflow-y: auto;
+            overflow: visible;
         }
         .browser-replay-section {
             background: #fafafa;
@@ -1583,11 +1597,12 @@
         }
         .browser-replay-toolbar {
             display: flex;
+            flex-wrap: wrap;
             gap: 0.35rem;
             margin-bottom: 0.45rem;
         }
         .browser-replay-toolbar button {
-            flex: 1;
+            flex: 1 1 8rem;
             font-size: 0.6rem;
             padding: 0.3rem 0.4rem;
             border-radius: 0.4rem;
@@ -1627,8 +1642,7 @@
             font-size: 0.625rem;
             line-height: 1.4;
             color: #52525b;
-            max-height: 10rem;
-            overflow-y: auto;
+            overflow: visible;
         }
         #dagGraphMemoryList .mem-hit {
             margin-bottom: 0.5rem;
@@ -2139,6 +2153,9 @@
     let pendingChatScrollFrame = null;
     let pendingLogScrollFrame = null;
     let lastDagGraphRenderSignature = '';
+    let lastBrowserReplayKey = '';
+    let browserReplayInFlightKey = '';
+    const browserReplayCache = {};
 
     function syncComposerControls() {
         const running = agentRunActive || serverAgentBusy;
@@ -2714,7 +2731,9 @@
         while (chatStreamLogsEl.children.length > MAX_STREAM_LINES) {
             chatStreamLogsEl.removeChild(chatStreamLogsEl.firstChild);
         }
-        chatStreamLogsEl.scrollTop = chatStreamLogsEl.scrollHeight;
+        requestAnimationFrame(function () {
+            if (chatStreamLogsEl) chatStreamLogsEl.scrollTop = chatStreamLogsEl.scrollHeight;
+        });
         scrollChatToBottom();
     }
 
@@ -3100,10 +3119,31 @@
         if (!dagBrowserReplaySection || !dagBrowserReplay) return Promise.resolve();
         if (!sessionId) {
             dagBrowserReplaySection.hidden = true;
+            lastBrowserReplayKey = '';
             return Promise.resolve();
         }
+        const replayKey = sessionId + '::' + (nodeId || '');
         dagBrowserReplaySection.hidden = false;
-        dagBrowserReplay.innerHTML = '<p class="text-zinc-500">Loading replay…</p>';
+        if (replayKey === lastBrowserReplayKey && dagBrowserReplay.dataset.loaded === '1') {
+            return Promise.resolve();
+        }
+        if (browserReplayInFlightKey === replayKey) {
+            return Promise.resolve();
+        }
+        if (browserReplayCache[replayKey]) {
+            dagBrowserReplay.innerHTML = browserReplayCache[replayKey].html;
+            dagBrowserReplay.dataset.reportText = browserReplayCache[replayKey].reportText || '';
+            dagBrowserReplay.dataset.loaded = '1';
+            lastBrowserReplayKey = replayKey;
+            bindBrowserReplayToolbar();
+            return Promise.resolve();
+        }
+        browserReplayInFlightKey = replayKey;
+        if (lastBrowserReplayKey !== replayKey) {
+            dagBrowserReplay.innerHTML = '<p class="text-zinc-500">Loading replay…</p>';
+            dagBrowserReplay.dataset.loaded = '';
+            dagBrowserReplay.dataset.reportText = '';
+        }
         let url =
             '/api/dag/browser-replay?session_id=' + encodeURIComponent(sessionId);
         if (nodeId) url += '&node_id=' + encodeURIComponent(nodeId);
@@ -3115,31 +3155,52 @@
                 if (data.status !== 'success' || !data.available) {
                     dagBrowserReplay.innerHTML =
                         '<p class="text-zinc-500">No browser replay for this session.</p>';
+                    dagBrowserReplay.dataset.loaded = '1';
+                    lastBrowserReplayKey = replayKey;
                     return;
                 }
                 dagBrowserReplay.innerHTML = renderBrowserReplayHtml(data);
-                const copyBtn = dagBrowserReplay.querySelector('[data-copy-replay]');
-                if (copyBtn) {
-                    copyBtn.addEventListener('click', function () {
-                        const text = (data.sections || [])
-                            .map(function (s) {
-                                return s.n + '. ' + s.title + '\n' + (s.body || '');
-                            })
-                            .join('\n\n');
-                        navigator.clipboard.writeText(text).catch(function () {});
-                    });
-                }
-                const demoBtn = dagBrowserReplay.querySelector('[data-load-comp-ref]');
-                if (demoBtn) {
-                    demoBtn.addEventListener('click', function () {
-                        void openBrowserReplayForSession('dag_COMP_ref');
-                    });
-                }
+                const reportText = (data.sections || [])
+                    .map(function (s) {
+                        return s.n + '. ' + s.title + '\n' + (s.body || '');
+                    })
+                    .join('\n\n');
+                dagBrowserReplay.dataset.reportText = reportText;
+                dagBrowserReplay.dataset.loaded = '1';
+                browserReplayCache[replayKey] = {
+                    html: dagBrowserReplay.innerHTML,
+                    reportText: reportText,
+                };
+                lastBrowserReplayKey = replayKey;
+                bindBrowserReplayToolbar();
             })
             .catch(function () {
                 dagBrowserReplay.innerHTML =
                     '<p class="text-red-600">Failed to load browser replay.</p>';
+            })
+            .finally(function () {
+                if (browserReplayInFlightKey === replayKey) browserReplayInFlightKey = '';
             });
+    }
+
+    function bindBrowserReplayToolbar() {
+        if (!dagBrowserReplay) return;
+        const copyBtn = dagBrowserReplay.querySelector('[data-copy-replay]');
+        if (copyBtn && !copyBtn.dataset.bound) {
+            copyBtn.dataset.bound = '1';
+            copyBtn.addEventListener('click', function () {
+                navigator.clipboard
+                    .writeText(dagBrowserReplay.dataset.reportText || dagBrowserReplay.textContent || '')
+                    .catch(function () {});
+            });
+        }
+        const demoBtn = dagBrowserReplay.querySelector('[data-load-comp-ref]');
+        if (demoBtn && !demoBtn.dataset.bound) {
+            demoBtn.dataset.bound = '1';
+            demoBtn.addEventListener('click', function () {
+                void openBrowserReplayForSession('dag_COMP_ref');
+            });
+        }
     }
 
     function loadBrowserReplayPanel(nodeId, skill) {
@@ -3165,9 +3226,6 @@
 
     function openGraphView() {
         setMainView('graph');
-        if (dagGraphPanel) {
-            dagGraphPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
     }
 
     function loadGraphView(sessionId) {
@@ -4205,7 +4263,7 @@
                 fetchBrowserReplay(sid, null);
             }
             if (dagBrowserReplaySection) {
-                dagBrowserReplaySection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                dagBrowserReplaySection.scrollIntoView({ block: 'nearest' });
             }
         });
     }
@@ -4389,7 +4447,7 @@
             if (nodeId) showDagNodeDetail(nodeId, browserNode);
             else fetchBrowserReplay(sessionId, null);
             if (dagBrowserReplaySection) {
-                dagBrowserReplaySection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                dagBrowserReplaySection.scrollIntoView({ block: 'nearest' });
             }
         });
     }
@@ -4411,9 +4469,6 @@
         autoResizeTextarea(queryInput);
         updateComposerHint();
         setFormHint(autoRun ? '' : 'Task loaded. Review it, then press Send.');
-        if (keepTasksOpen && intentCard) {
-            intentCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
         try {
             queryInput.focus({ preventScroll: true });
         } catch (err) {
