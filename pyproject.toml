@@ -47,6 +47,11 @@ browser-use = [
     "browser-use",
 ]
 
+[tool.uv]
+# lxml ships manylinux/macOS/Windows wheels for cp312 — never compile it from
+# source (avoids "libxml2/libxslt development packages" build failures).
+no-build-package = ["lxml"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["super_browser*"]
