@@ -17,7 +17,7 @@ from typing import Any, Awaitable, Callable
 from urllib.parse import quote_plus
 
 import httpx
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 from .llm_env import (
     gemini_api_key,

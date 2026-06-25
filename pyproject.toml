@@ -21,7 +21,7 @@ dependencies = [
     "faiss-cpu>=1.8.0",
     # Researcher
     "crawl4ai",
-    "duckduckgo-search",
+    "ddgs",
     "tavily-python",
     # LLM
     "google-genai",

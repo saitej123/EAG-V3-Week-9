@@ -20,7 +20,7 @@ faiss-cpu>=1.8.0
 
 # Researcher (fetch_url, web_search — not browser cascade)
 crawl4ai
-duckduckgo-search
+ddgs
 tavily-python
 
 # LLM (direct Gemini SDK; gateway optional)
