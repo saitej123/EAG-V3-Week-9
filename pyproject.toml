@@ -27,12 +27,11 @@ dependencies = [
     "google-genai",
     # MCP
     "mcp[cli]",
-    # Web UI
+    # Web UI (SSE stream uses FastAPI's native StreamingResponse)
     "fastapi",
     "uvicorn",
     "jinja2",
     "python-multipart",
-    "sse-starlette",
     "loguru",
     # Documents
     "pymupdf",
