@@ -3,6 +3,7 @@ FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright \
     CRAWL4AI_BASE_DIRECTORY=/app/.crawl4ai \
     AGENT_MAX_ITERATIONS=3 \
     AGENT_ITERATION_CEILING=4 \
@@ -34,12 +35,15 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
-# Browser for crawl4ai (optional at runtime but needed for fetch_url)
-RUN uv run playwright install chromium
+# Browser for crawl4ai + browser cascade (needed for fetch_url and render layers).
+# --with-deps installs Chromium's OS libraries; PLAYWRIGHT_BROWSERS_PATH keeps the
+# binary at a fixed location so it is found at runtime.
+RUN uv run playwright install --with-deps chromium
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8000/health | grep -q '"status"' || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT:-8000}/health" | grep -q '"status"' || exit 1
 
-CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Honor the platform-injected $PORT (Railway/Render/Cloud Run); default to 8000 locally.
+CMD ["sh", "-c", "uv run uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
