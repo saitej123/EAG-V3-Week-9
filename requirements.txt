@@ -30,7 +30,7 @@ google-genai
 mcp[cli]
 
 # Web UI (SSE stream uses FastAPI's native StreamingResponse)
-fastapi
+fastapi[standard]
 uvicorn
 jinja2
 python-multipart
